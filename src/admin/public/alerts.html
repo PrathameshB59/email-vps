@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Email-VPS Admin Alerts</title>
+  <link rel="stylesheet" href="/admin/assets/admin.css" />
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <div>
+        <h1>Email-VPS Alerts</h1>
+        <p class="small">System, relay, quota, and security alerts</p>
+      </div>
+      <button class="danger" onclick="AdminClient.adminLogout()">Logout</button>
+    </div>
+
+    <nav>
+      <a class="nav-link" href="/admin/dashboard">Dashboard</a>
+      <a class="nav-link" href="/admin/logs">Logs</a>
+      <a class="nav-link active" href="/admin/alerts">Alerts</a>
+    </nav>
+
+    <div class="card" style="margin-top:16px;">
+      <div id="alertsList"></div>
+    </div>
+  </div>
+
+  <script src="/admin/assets/admin-client.js"></script>
+  <script>
+    AdminClient.requireAdminAuth();
+
+    function badgeClass(alert) {
+      if (alert.severity === "critical") return "err";
+      if (alert.severity === "warning") return "warn";
+      return "ok";
+    }
+
+    function escapeHtml(value) {
+      return String(value || "")
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;");
+    }
+
+    async function loadAlerts() {
+      const result = await AdminClient.apiFetch("/alerts");
+      const list = document.getElementById("alertsList");
+
+      list.innerHTML = result.alerts.map((alert) => `
+        <div class="card" style="margin:0 0 12px 0;">
+          <div style="display:flex;justify-content:space-between;gap:8px;align-items:center;">
+            <strong>${escapeHtml(alert.alert_type)}</strong>
+            <span class="badge ${badgeClass(alert)}">${escapeHtml(alert.status)} • ${escapeHtml(alert.severity)}</span>
+          </div>
+          <p class="small" style="margin:8px 0 0 0;">${escapeHtml(alert.message || "-")}</p>
+          <p class="small" style="margin:8px 0 0 0;">Value: ${escapeHtml(alert.value || "-")}</p>
+          <p class="small" style="margin:8px 0 0 0;">Updated: ${escapeHtml(alert.last_seen_at)}</p>
+        </div>
+      `).join("");
+    }
+
+    loadAlerts().catch((error) => {
+      document.getElementById("alertsList").innerHTML = `<pre>${escapeHtml(error.message)}</pre>`;
+    });
+  </script>
+</body>
+</html>

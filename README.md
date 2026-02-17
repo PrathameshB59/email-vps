@@ -1,170 +1,144 @@
 # email-vps
 
-Phase 1+2 implementation for secure VPS email delivery (Postfix relay based) while preserving the existing monitoring dashboard.
+Email-VPS now includes:
 
-## What This Service Does
+- Phase 1+2 mail relay implementation (Postfix relay + queue + retries + quota + templates).
+- Section 15 secure admin dashboard service on localhost `127.0.0.1:9100`.
 
-- Serves the existing `dashboard.html` and `metrics.json` monitor view on port `8081`.
-- Provides secured mail API endpoints at `/api/v1/mail/*`.
-- Uses local Postfix relay (`127.0.0.1:25` by default) for outbound mail.
-- Enforces a global `500/day` quota by default.
-- Persists queue, attempts, and quota state in SQLite.
-- Retries transient delivery failures with exponential backoff.
+## Services
 
-## Quick Start
+1. Mail service (`src/server.js`)
+- Serves `dashboard.html` and `metrics.json` on port `8081`.
+- Exposes `/api/v1/mail/*` with loopback-only + bearer token protection.
 
-1. Install dependencies:
+2. Admin service (`src/admin/server.js`)
+- Serves `/admin/login`, `/admin/dashboard`, `/admin/logs`, `/admin/alerts`.
+- Exposes `/api/v1/admin/*` with JWT access/refresh auth.
+- Runs on `127.0.0.1:9100` behind Nginx reverse proxy.
+
+## Install
 
 ```bash
 npm install
-```
-
-2. Create environment file:
-
-```bash
 cp .env.example .env
 ```
 
-3. Edit `.env` and set at minimum:
+Set strong secrets in `.env`:
 
 - `MAIL_API_TOKEN`
 - `MAIL_FROM`
+- `ADMIN_JWT_ACCESS_SECRET`
+- `ADMIN_JWT_REFRESH_SECRET`
 
-4. Start service:
+## Run
+
+Mail service:
 
 ```bash
-npm start
+npm run start:mail
 ```
 
-Service defaults:
+Admin service:
 
-- Dashboard: `http://<host>:8081/dashboard.html`
-- Mail API base: `http://<host>:8081/api/v1/mail`
+```bash
+npm run start:admin
+```
 
-## API Contracts
+## Mail API
 
-All `/api/v1/mail/*` endpoints require:
+All routes require:
 
 - `Authorization: Bearer <MAIL_API_TOKEN>`
-- Loopback source IP by default (`127.0.0.1` / `::1`)
+- Loopback source by default (`127.0.0.1` / `::1`)
 
-### `POST /api/v1/mail/send`
+Routes:
 
-Request:
+- `POST /api/v1/mail/send`
+- `POST /api/v1/mail/send-template`
+- `GET /api/v1/mail/health`
+- `GET /api/v1/mail/quota`
+- `GET /api/v1/mail/events`
 
-```json
-{
-  "to": "user@example.com",
-  "subject": "Alert",
-  "text": "CPU high",
-  "category": "system-alert"
-}
-```
+## Admin API
 
-### `POST /api/v1/mail/send-template`
+Auth routes:
 
-Request:
+- `POST /api/v1/admin/auth/login`
+- `POST /api/v1/admin/auth/refresh`
+- `POST /api/v1/admin/auth/logout`
 
-```json
-{
-  "to": "user@example.com",
-  "template": "system-alert",
-  "variables": {
-    "title": "CPU Spike",
-    "severity": "warning",
-    "service": "nginx",
-    "details": "Load average is elevated"
-  }
-}
-```
+Protected routes:
 
-### `GET /api/v1/mail/health`
+- `GET /api/v1/admin/overview`
+- `GET /api/v1/admin/logs`
+- `GET /api/v1/admin/quota`
+- `GET /api/v1/admin/alerts`
+- `GET /api/v1/admin/relay-health`
 
-Returns relay verification, queue counts, and quota snapshot.
-
-### `GET /api/v1/mail/quota`
-
-Returns current-day usage against configured daily limit.
-
-## CLI Workflows
-
-Send a direct test email:
+## CLI
 
 ```bash
 npm run mail:test -- --to you@example.com
+npm run mail:send -- --to you@example.com --template system-alert --vars title=CPU,details=High,severity=warning
 ```
 
-Send a templated email:
+Seed admin user:
 
 ```bash
-npm run mail:send -- --to you@example.com --template system-alert --vars title=CPU,details=High%20load,severity=warning
+npm run seed:admin -- --email admin@stackpilot.in --password 'StrongPasswordHere'
 ```
 
-## Data and Persistence
+## Data Storage
 
-SQLite database path defaults to:
+SQLite DB:
 
-- `/home/devuser/dev/email-vps/data/email_vps.sqlite`
+- `data/email_vps.sqlite`
 
-Tables:
+Primary tables:
 
 - `mail_queue`
 - `mail_events`
 - `daily_quota`
+- `admin_users`
+- `admin_sessions`
+- `admin_auth_events`
+- `system_alert_state`
 
-Retention cleanup:
+## Runtime Checkpoints
 
-- Old `mail_events` rows are pruned (default 30 days).
+PM2 target scripts:
 
-## Postfix Relay Checks
+- `email-vps` -> `/home/devuser/dev/email-vps/src/server.js`
+- `email-vps-admin` -> `/home/devuser/dev/email-vps/src/admin/server.js`
 
-Verify Postfix is active:
+Metrics cron target:
 
-```bash
-sudo systemctl status postfix
-```
+- `* * * * * /home/devuser/dev/email-vps/generate_metrics.sh`
 
-Verify SMTP is local-only:
-
-```bash
-sudo ss -tulpn | grep ':25'
-```
-
-Expected local-only bind.
-
-Quick send test from host:
+Postfix check:
 
 ```bash
-echo "relay test" | mail -s "Email VPS relay test" your_email@example.com
+systemctl status postfix
+ss -tulpn | grep ':25'
 ```
 
-## Cron and PM2
-
-Metrics generation every minute:
-
-```cron
-* * * * * /home/devuser/dev/email-vps/generate_metrics.sh
-```
-
-Run app with PM2:
+Security target is localhost-only SMTP listener. If your host currently exposes `:25`, apply privileged hardening:
 
 ```bash
-pm2 start src/server.js --name email-vps
-pm2 save
-pm2 startup
+sudo postconf -e 'inet_interfaces = loopback-only'
+sudo systemctl restart postfix
 ```
 
-## Troubleshooting
+## Deployment Artifacts
 
-- `UNAUTHORIZED`: invalid/missing bearer token.
-- `FORBIDDEN_NON_LOCAL`: API called from non-loopback address.
-- `DAILY_QUOTA_EXCEEDED`: day limit reached.
-- Relay verify failed in health endpoint:
-  - check `postfix` is running,
-  - confirm local port/host in `.env`,
-  - inspect `/var/log/mail.log`.
+- Nginx config: `deploy/nginx/mail.stackpilot.in.conf`
+- PM2 ecosystem: `deploy/pm2/admin-ecosystem.config.cjs`
+- Section 15 runbook: `docs/SECTION15_RUNBOOK.md`
 
-## Notes
+## Tests
 
-- No VPS progress HTML files are modified by this implementation.
-- This phase intentionally excludes SPF/DKIM/DMARC/PTR setup.
+```bash
+npm test
+```
+
+Covers env parsing, retry policy, quota behavior, queue recovery, API auth/local-only enforcement, template rendering, and metrics path migration.

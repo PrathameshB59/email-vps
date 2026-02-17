@@ -3,4 +3,5 @@ node_modules/
 logs/
 *.log
 data/*.sqlite
+data/*.sqlite-*
 metrics.json

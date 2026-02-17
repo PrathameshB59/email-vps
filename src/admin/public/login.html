@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Email-VPS Admin Login</title>
+  <link rel="stylesheet" href="/admin/assets/admin.css" />
+</head>
+<body>
+  <div class="login-wrap">
+    <div class="card login-card">
+      <h1>Email-VPS Admin</h1>
+      <p class="small">Private control plane login</p>
+      <form id="loginForm">
+        <label>
+          Email
+          <input type="email" id="email" required autocomplete="username" />
+        </label>
+        <label>
+          Password
+          <input type="password" id="password" required autocomplete="current-password" />
+        </label>
+        <button type="submit">Sign In</button>
+      </form>
+      <p id="error" class="small" style="color:#fca5a5;margin-top:12px;"></p>
+    </div>
+  </div>
+
+  <script>
+    const form = document.getElementById("loginForm");
+    const errorEl = document.getElementById("error");
+
+    form.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      errorEl.textContent = "";
+
+      const email = document.getElementById("email").value.trim();
+      const password = document.getElementById("password").value;
+
+      try {
+        const response = await fetch("/api/v1/admin/auth/login", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ email, password }),
+        });
+
+        const data = await response.json();
+
+        if (!response.ok) {
+          throw new Error(data.message || "Login failed");
+        }
+
+        localStorage.setItem("adminAccessToken", data.accessToken);
+        localStorage.setItem("adminRefreshToken", data.refreshToken);
+        window.location.href = "/admin/dashboard";
+      } catch (error) {
+        errorEl.textContent = error.message;
+      }
+    });
+  </script>
+</body>
+</html>

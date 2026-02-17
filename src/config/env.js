@@ -43,6 +43,25 @@ const envSchema = z.object({
   LOG_RETENTION_DAYS: z.coerce.number().int().positive().default(30),
   QUEUE_POLL_MS: z.coerce.number().int().positive().default(5000),
   QUEUE_BATCH_SIZE: z.coerce.number().int().positive().default(20),
+
+  ADMIN_HOST: z.string().default("127.0.0.1"),
+  ADMIN_PORT: z.coerce.number().int().positive().default(9100),
+  ADMIN_ALLOWED_ORIGIN: z.string().default("https://mail.stackpilot.in"),
+
+  ADMIN_JWT_ACCESS_SECRET: z.string().min(16).default("change-this-access-secret"),
+  ADMIN_JWT_REFRESH_SECRET: z.string().min(16).default("change-this-refresh-secret"),
+  ADMIN_ACCESS_TTL: z.string().default("15m"),
+  ADMIN_REFRESH_TTL: z.string().default("7d"),
+
+  ADMIN_LOGIN_RATE_LIMIT: z.coerce.number().int().positive().default(20),
+  ADMIN_LOGIN_RATE_WINDOW_MS: z.coerce.number().int().positive().default(60000),
+  ADMIN_LOCKOUT_THRESHOLD: z.coerce.number().int().positive().default(5),
+  ADMIN_LOCKOUT_WINDOW_MINUTES: z.coerce.number().int().positive().default(15),
+
+  ADMIN_SEED_EMAIL: z.string().default(""),
+  ADMIN_SEED_PASSWORD: z.string().default(""),
+  ADMIN_DEFAULT_ROLE: z.string().default("admin"),
+  ADMIN_METRICS_PATH: z.string().default(path.resolve(process.cwd(), "metrics.json")),
 });
 
 function parseEnv(rawEnv) {
