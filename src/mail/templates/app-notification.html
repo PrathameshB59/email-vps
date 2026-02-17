@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>App Notification</title>
+</head>
+<body style="margin:0;padding:0;background:#0b1220;color:#dbeafe;font-family:Arial,sans-serif;">
+  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="padding:24px 0;">
+    <tr>
+      <td align="center">
+        <table role="presentation" width="640" cellspacing="0" cellpadding="0" style="max-width:640px;background:#0f172a;border-radius:12px;overflow:hidden;">
+          <tr>
+            <td style="padding:20px 24px;background:#0369a1;color:#ffffff;font-size:20px;font-weight:bold;">
+              Email-VPS App Notification
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:24px;">
+              <p style="margin:0 0 12px 0;font-size:18px;color:#f8fafc;"><strong>{{title}}</strong></p>
+              <p style="margin:0 0 16px 0;">{{summary}}</p>
+              <p style="margin:0 0 8px 0;">Service: <strong>{{service}}</strong></p>
+              <p style="margin:0 0 16px 0;">Timestamp: <strong>{{timestamp}}</strong></p>
+              <p style="margin:0;">
+                <a href="{{action_url}}" style="display:inline-block;padding:10px 16px;background:#38bdf8;color:#0f172a;text-decoration:none;border-radius:8px;font-weight:bold;">
+                  Open Action
+                </a>
+              </p>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>

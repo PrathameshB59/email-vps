@@ -1,8 +1,6 @@
-const express = require("express");
-const app = express();
+const { startServer } = require("./src/server");
 
-app.use(express.static(__dirname));
-
-app.listen(8081, "0.0.0.0", () => {
-  console.log("StackPilot Dashboard running on port 8081");
+startServer().catch((error) => {
+  console.error("[email-vps] Failed to start server:", error);
+  process.exit(1);
 });

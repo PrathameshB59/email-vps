@@ -1,0 +1,28 @@
+{
+  "name": "email-vps",
+  "version": "1.0.0",
+  "description": "Email VPS relay + monitoring dashboard service",
+  "main": "src/server.js",
+  "type": "commonjs",
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "node --watch src/server.js",
+    "test": "node --test test",
+    "mail:test": "node src/cli/mail-test.js",
+    "mail:send": "node src/cli/mail-send.js"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "dotenv": "^16.4.7",
+    "express": "^4.21.2",
+    "nodemailer": "^6.10.0",
+    "sqlite": "^5.1.1",
+    "sqlite3": "^5.1.7",
+    "zod": "^3.24.1"
+  },
+  "devDependencies": {
+    "supertest": "^7.1.0"
+  }
+}

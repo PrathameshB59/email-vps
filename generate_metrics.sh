@@ -1,6 +1,9 @@
 #!/bin/bash
+set -uo pipefail
 
-OUTPUT="/opt/stackpilot-monitor/metrics.json"
+# Portable output path (repo-root based).
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+OUTPUT="${SCRIPT_DIR}/metrics.json"
 
 DATE=$(date)
 LOAD=$(uptime | awk -F'load average:' '{ print $2 }')
@@ -24,7 +27,7 @@ else
   RISK="SECURE"
 fi
 
-cat <<EOF > $OUTPUT
+cat <<EOF > "$OUTPUT"
 {
   "date": "$DATE",
   "load": "$LOAD",
@@ -40,3 +43,5 @@ cat <<EOF > $OUTPUT
 }
 EOF
 
+# Cron example:
+# * * * * * /home/devuser/dev/email-vps/generate_metrics.sh
