@@ -4,6 +4,8 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Email-VPS Balanced NOC</title>
+  <link rel="icon" href="/dashboard/assets/favicon.svg" type="image/svg+xml" />
+  <link rel="shortcut icon" href="/dashboard/assets/favicon.svg" type="image/svg+xml" />
   <link rel="stylesheet" href="/dashboard/assets/dashboard.css" />
 </head>
 <body>
@@ -30,7 +32,7 @@
     <section class="kpi-grid" id="kpiGrid"></section>
 
     <section class="insight-grid">
-      <article class="panel panel-wide">
+      <article class="panel panel-wide panel-delivery">
         <div class="panel-head">
           <div>
             <h2>Delivery Volume</h2>
@@ -38,21 +40,21 @@
           </div>
         </div>
         <div class="chart-shell">
-          <canvas id="deliveryChart"></canvas>
+          <canvas id="deliveryChart" role="img" aria-label="Delivery volume chart"></canvas>
         </div>
       </article>
 
-      <article class="panel">
+      <article class="panel panel-action">
         <div class="panel-head">
           <div>
             <h2>Actionable Insights</h2>
             <p class="meta">Top issue, operator action, and impact context.</p>
           </div>
         </div>
-        <div id="actionPlan" class="action-plan"></div>
+        <div id="actionPlan" class="action-plan" aria-live="polite"></div>
       </article>
 
-      <article class="panel panel-wide">
+      <article class="panel panel-wide panel-risk">
         <div class="panel-head">
           <div>
             <h2>Risk and Quota Burn Trend</h2>
@@ -60,11 +62,11 @@
           </div>
         </div>
         <div class="chart-shell">
-          <canvas id="riskQuotaChart"></canvas>
+          <canvas id="riskQuotaChart" role="img" aria-label="Risk and quota trend chart"></canvas>
         </div>
       </article>
 
-      <article class="panel">
+      <article class="panel panel-errors">
         <div class="panel-head">
           <div>
             <h2>Error Code Mix</h2>
@@ -72,13 +74,13 @@
           </div>
         </div>
         <div class="chart-shell small">
-          <canvas id="errorChart"></canvas>
+          <canvas id="errorChart" role="img" aria-label="Error code distribution chart"></canvas>
         </div>
       </article>
     </section>
 
     <section class="main-grid">
-      <article class="panel panel-wide">
+      <article class="panel panel-wide panel-logs">
         <div class="panel-head between">
           <div>
             <h2>Recent Email Events</h2>
@@ -106,7 +108,7 @@
           </div>
         </div>
         <div class="table-wrap">
-          <table>
+          <table aria-label="Recent email events">
             <thead>
               <tr>
                 <th>Time</th>

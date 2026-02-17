@@ -4,6 +4,8 @@ const dashboardState = {
     riskQuota: null,
     errors: null,
   },
+  viewportBucket: "desktop",
+  lastPayload: null,
   filters: {
     status: "",
     category: "",
@@ -124,6 +126,34 @@ function formatDurationMinutes(minutes) {
   const hours = Math.floor(numeric / 60);
   const mins = Math.round(numeric % 60);
   return `${hours}h ${mins}m`;
+}
+
+function getViewportBucket() {
+  const width = Number(window.innerWidth || 1280);
+  if (width <= 420) return "phone-narrow";
+  if (width <= 640) return "phone";
+  if (width <= 820) return "tablet-compact";
+  if (width <= 1024) return "tablet";
+  if (width <= 1280) return "desktop-compact";
+  return "desktop";
+}
+
+function isCompactViewport(bucket) {
+  return ["phone-narrow", "phone", "tablet-compact"].includes(bucket);
+}
+
+function prefersReducedMotion() {
+  return Boolean(window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches);
+}
+
+function debounce(fn, wait = 180) {
+  let timer = null;
+  return (...args) => {
+    if (timer) {
+      clearTimeout(timer);
+    }
+    timer = setTimeout(() => fn(...args), wait);
+  };
 }
 
 function renderHealthStrip(overview, insights, security) {
@@ -358,7 +388,7 @@ function renderLogs(logs) {
 
   if (!logs.length) {
     body.innerHTML =
-      '<tr><td colspan="7" class="empty-state">No logs found for current filters.</td></tr>';
+      '<tr><td colspan="7" class="empty-state empty-cell">No logs found for current filters.</td></tr>';
     return;
   }
 
@@ -366,15 +396,15 @@ function renderLogs(logs) {
     .map((row) => {
       const errorText = row.error_message || row.error_code || "-";
       return `<tr>
-        <td>${escapeHtml(formatTime(row.created_at))}</td>
-        <td>${escapeHtml(fmt(row.to_email))}</td>
-        <td class="mono" title="${escapeHtml(fmt(row.request_id))}">${escapeHtml(
+        <td data-label="Time">${escapeHtml(formatTime(row.created_at))}</td>
+        <td data-label="Recipient">${escapeHtml(fmt(row.to_email))}</td>
+        <td data-label="Request ID" class="mono request-id" title="${escapeHtml(fmt(row.request_id))}">${escapeHtml(
         truncateId(row.request_id)
       )}</td>
-        <td>${escapeHtml(fmt(row.category))}</td>
-        <td><span class="${badgeClass(row.status)}">${escapeHtml(fmt(row.status))}</span></td>
-        <td>${escapeHtml(fmt(row.attempt))}</td>
-        <td title="${escapeHtml(fmt(errorText))}">${escapeHtml(fmt(errorText))}</td>
+        <td data-label="Category">${escapeHtml(fmt(row.category))}</td>
+        <td data-label="Status"><span class="${badgeClass(row.status)}">${escapeHtml(fmt(row.status))}</span></td>
+        <td data-label="Attempt">${escapeHtml(fmt(row.attempt))}</td>
+        <td data-label="Error" class="error-cell" title="${escapeHtml(fmt(errorText))}">${escapeHtml(fmt(errorText))}</td>
       </tr>`;
     })
     .join("");
@@ -419,7 +449,43 @@ function ensureChartJsDefaults() {
 function renderCharts(timeseries, insights, windowValue) {
   ensureChartJsDefaults();
 
+  const viewportBucket = getViewportBucket();
+  const compact = isCompactViewport(viewportBucket);
+  const narrow = ["phone-narrow", "phone"].includes(viewportBucket);
+  const reducedMotion = prefersReducedMotion();
+  const maxTicksLimit = viewportBucket === "phone-narrow"
+    ? 4
+    : viewportBucket === "phone"
+    ? 5
+    : viewportBucket === "tablet-compact"
+    ? 7
+    : viewportBucket === "tablet"
+    ? 9
+    : viewportBucket === "desktop-compact"
+    ? 11
+    : 14;
+
   const labels = (timeseries.points || []).map((point) => chartReadyLabel(point.bucketStart, windowValue));
+  const legendPosition = compact ? "bottom" : "top";
+  const tickFontSize = narrow ? 10 : compact ? 11 : 12;
+  const linePointRadius = compact ? 0 : 2;
+  const lineHoverRadius = compact ? 3 : 4;
+  const chartAnimation = reducedMotion
+    ? false
+    : {
+        duration: compact ? 280 : 520,
+        easing: "easeOutQuart",
+      };
+
+  const sharedScaleX = {
+    ticks: {
+      autoSkip: true,
+      maxTicksLimit,
+      maxRotation: 0,
+      minRotation: 0,
+      font: { size: tickFontSize },
+    },
+  };
 
   destroyChartInstance("delivery");
   const deliveryContext = document.getElementById("deliveryChart")?.getContext("2d");
@@ -435,6 +501,9 @@ function renderCharts(timeseries, insights, windowValue) {
             borderColor: "#22d4a9",
             backgroundColor: "rgba(34, 212, 169, 0.22)",
             tension: 0.28,
+            pointRadius: linePointRadius,
+            pointHoverRadius: lineHoverRadius,
+            borderWidth: 2,
             fill: true,
           },
           {
@@ -443,6 +512,9 @@ function renderCharts(timeseries, insights, windowValue) {
             borderColor: "#f4ba53",
             backgroundColor: "rgba(244, 186, 83, 0.15)",
             tension: 0.28,
+            pointRadius: linePointRadius,
+            pointHoverRadius: lineHoverRadius,
+            borderWidth: 2,
             fill: true,
           },
           {
@@ -451,20 +523,35 @@ function renderCharts(timeseries, insights, windowValue) {
             borderColor: "#ff6c73",
             backgroundColor: "rgba(255, 108, 115, 0.15)",
             tension: 0.28,
+            pointRadius: linePointRadius,
+            pointHoverRadius: lineHoverRadius,
+            borderWidth: 2,
             fill: true,
           },
         ],
       },
       options: {
+        animation: chartAnimation,
         maintainAspectRatio: false,
         interaction: { mode: "index", intersect: false },
         plugins: {
-          legend: { position: "top" },
+          legend: {
+            position: legendPosition,
+            labels: {
+              boxWidth: compact ? 10 : 14,
+              font: { size: tickFontSize },
+              usePointStyle: true,
+            },
+          },
         },
         scales: {
+          x: sharedScaleX,
           y: {
             beginAtZero: true,
-            ticks: { precision: 0 },
+            ticks: {
+              precision: 0,
+              font: { size: tickFontSize },
+            },
           },
         },
       },
@@ -485,6 +572,9 @@ function renderCharts(timeseries, insights, windowValue) {
             borderColor: "#ff6c73",
             backgroundColor: "rgba(255, 108, 115, 0.14)",
             tension: 0.24,
+            pointRadius: linePointRadius,
+            pointHoverRadius: lineHoverRadius,
+            borderWidth: 2,
             yAxisID: "yRisk",
           },
           {
@@ -493,29 +583,47 @@ function renderCharts(timeseries, insights, windowValue) {
             borderColor: "#62c5ff",
             backgroundColor: "rgba(98, 197, 255, 0.15)",
             tension: 0.24,
+            pointRadius: linePointRadius,
+            pointHoverRadius: lineHoverRadius,
+            borderWidth: 2,
             yAxisID: "yQuota",
           },
         ],
       },
       options: {
+        animation: chartAnimation,
         maintainAspectRatio: false,
         interaction: { mode: "index", intersect: false },
         plugins: {
-          legend: { position: "top" },
+          legend: {
+            position: legendPosition,
+            labels: {
+              boxWidth: compact ? 10 : 14,
+              font: { size: tickFontSize },
+              usePointStyle: true,
+            },
+          },
         },
         scales: {
+          x: sharedScaleX,
           yRisk: {
             position: "left",
             min: 0,
             max: 100,
-            ticks: { callback: (value) => `${value}` },
+            ticks: {
+              callback: (value) => `${value}`,
+              font: { size: tickFontSize },
+            },
           },
           yQuota: {
             position: "right",
             min: 0,
             max: 100,
             grid: { drawOnChartArea: false },
-            ticks: { callback: (value) => `${value}%` },
+            ticks: {
+              callback: (value) => `${value}%`,
+              font: { size: tickFontSize },
+            },
           },
         },
       },
@@ -525,14 +633,14 @@ function renderCharts(timeseries, insights, windowValue) {
   destroyChartInstance("errors");
   const errorContext = document.getElementById("errorChart")?.getContext("2d");
   if (errorContext) {
-    const labels = (insights.topErrors || []).map((item) => item.code);
+    const errorLabels = (insights.topErrors || []).map((item) => item.code);
     const values = (insights.topErrors || []).map((item) => item.count);
     const hasData = values.some((value) => Number(value) > 0);
 
     dashboardState.charts.errors = new window.Chart(errorContext, {
       type: "doughnut",
       data: {
-        labels: hasData ? labels : ["No errors"],
+        labels: hasData ? errorLabels : ["No errors"],
         datasets: [
           {
             data: hasData ? values : [1],
@@ -545,12 +653,15 @@ function renderCharts(timeseries, insights, windowValue) {
         ],
       },
       options: {
+        animation: chartAnimation,
         maintainAspectRatio: false,
+        cutout: compact ? "58%" : "62%",
         plugins: {
           legend: {
             position: "bottom",
             labels: {
-              boxWidth: 12,
+              boxWidth: compact ? 10 : 12,
+              font: { size: tickFontSize },
             },
           },
         },
@@ -595,6 +706,17 @@ async function loadDashboard(windowValue) {
     }`;
   }
 
+  dashboardState.lastPayload = {
+    overview,
+    insights,
+    timeseries,
+    logsData,
+    alertsData,
+    security,
+    windowValue,
+  };
+  dashboardState.viewportBucket = getViewportBucket();
+
   renderHealthStrip(overview, insights, security);
   renderKpis(overview, insights);
   renderActionPlan(insights);
@@ -603,6 +725,29 @@ async function loadDashboard(windowValue) {
   upsertCategoryOptions(insights.categoryMix || []);
   renderLogs(logsData.logs || []);
   renderCharts(timeseries, insights, windowValue);
+}
+
+function bindResponsiveRerender() {
+  const rerender = debounce(() => {
+    if (!dashboardState.lastPayload) {
+      return;
+    }
+
+    const nextBucket = getViewportBucket();
+    if (nextBucket === dashboardState.viewportBucket) {
+      return;
+    }
+
+    dashboardState.viewportBucket = nextBucket;
+    renderCharts(
+      dashboardState.lastPayload.timeseries,
+      dashboardState.lastPayload.insights,
+      dashboardState.lastPayload.windowValue
+    );
+  }, 160);
+
+  window.addEventListener("resize", rerender, { passive: true });
+  window.addEventListener("orientationchange", rerender);
 }
 
 async function handleLoginPage() {
@@ -664,6 +809,8 @@ async function handleDashboardPage() {
     window.location.href = "/login";
     return;
   }
+
+  bindResponsiveRerender();
 
   const refresh = async () => {
     try {
