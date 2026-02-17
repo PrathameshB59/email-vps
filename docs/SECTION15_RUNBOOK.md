@@ -153,6 +153,12 @@ Expected cron entry:
 ## 9. Troubleshooting Matrix
 
 - `NXDOMAIN`: DNS A record missing or not propagated.
+- `404` on `https://mail.stackpilot.in/login` right after successful certbot:
+  - cause: certbot may attach `mail.stackpilot.in` blocks to `/etc/nginx/sites-available/default` with static `try_files`.
+  - fix: run `sudo bash /home/devuser/dev/email-vps/deploy/nginx/fix_mail_stackpilot_vhost.sh`
+  - verify:
+    - `curl -I http://mail.stackpilot.in/login` -> `301`
+    - `curl -I https://mail.stackpilot.in/login` -> `200/302`
 - `403` on dashboard pages/APIs: IP not in `DASHBOARD_ALLOWED_IPS`.
 - `401` on dashboard APIs: missing/expired session cookie.
 - local start fails with secret length/comment issues: quote `DASHBOARD_SESSION_SECRET` if it contains `#`.
