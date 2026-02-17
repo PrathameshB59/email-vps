@@ -160,6 +160,9 @@ Expected cron entry:
     - `curl -I http://mail.stackpilot.in/login` -> `301`
     - `curl -I https://mail.stackpilot.in/login` -> `200/302`
 - `403` on dashboard pages/APIs: IP not in `DASHBOARD_ALLOWED_IPS`.
+  - check current client IP from your access device (`curl -4 https://api.ipify.org`)
+  - update `.env` `DASHBOARD_ALLOWED_IPS=<current_client_ip>,127.0.0.1,::1`
+  - apply with `pm2 restart email-vps --update-env && pm2 save`
 - `401` on dashboard APIs: missing/expired session cookie.
 - local start fails with secret length/comment issues: quote `DASHBOARD_SESSION_SECRET` if it contains `#`.
 - dashboard loads but charts empty: no snapshots yet; wait for snapshot worker or trigger refresh after traffic.
