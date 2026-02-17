@@ -11,6 +11,30 @@ function normalizeEmail(value) {
   return String(value || "").trim().toLowerCase();
 }
 
+function normalizeStatusSeverity(severity) {
+  const normalized = String(severity || "")
+    .trim()
+    .toLowerCase();
+
+  if (!normalized) {
+    return [];
+  }
+
+  if (normalized === "critical") {
+    return ["failed"];
+  }
+
+  if (normalized === "warning") {
+    return ["retrying", "processing"];
+  }
+
+  if (normalized === "info") {
+    return ["sent", "queued"];
+  }
+
+  return [];
+}
+
 async function createRepository({ dbPath }) {
   const resolvedPath = path.resolve(dbPath);
   fs.mkdirSync(path.dirname(resolvedPath), { recursive: true });
@@ -137,6 +161,29 @@ async function createRepository({ dbPath }) {
 
     CREATE INDEX IF NOT EXISTS idx_system_alert_state_status
       ON system_alert_state(status);
+
+    CREATE TABLE IF NOT EXISTS dashboard_metric_snapshots (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      captured_at TEXT NOT NULL DEFAULT (datetime('now')),
+      cpu_pct REAL,
+      memory_used_pct REAL,
+      disk_pct REAL,
+      load_1m REAL,
+      ssh_fails_24h INTEGER,
+      pm2_online INTEGER,
+      queue_pending INTEGER NOT NULL DEFAULT 0,
+      queue_retrying INTEGER NOT NULL DEFAULT 0,
+      queue_failed INTEGER NOT NULL DEFAULT 0,
+      sent_24h INTEGER NOT NULL DEFAULT 0,
+      failed_24h INTEGER NOT NULL DEFAULT 0,
+      quota_used INTEGER NOT NULL DEFAULT 0,
+      quota_limit INTEGER NOT NULL DEFAULT 0,
+      relay_ok INTEGER NOT NULL DEFAULT 0,
+      risk_score INTEGER NOT NULL DEFAULT 0
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_dashboard_metric_snapshots_captured_at
+      ON dashboard_metric_snapshots(captured_at);
   `);
 
   const repository = {
@@ -424,6 +471,57 @@ async function createRepository({ dbPath }) {
       );
     },
 
+    async listMailLogsMetadata({
+      limit = 50,
+      offset = 0,
+      status = null,
+      category = null,
+      query = null,
+      severity = null,
+    } = {}) {
+      const conditions = [];
+      const params = [];
+
+      if (status) {
+        conditions.push("status = ?");
+        params.push(String(status));
+      }
+
+      if (category) {
+        conditions.push("category = ?");
+        params.push(String(category));
+      }
+
+      const severityStatuses = normalizeStatusSeverity(severity);
+      if (severityStatuses.length > 0) {
+        conditions.push(
+          `status IN (${severityStatuses.map(() => "?").join(", ")})`
+        );
+        params.push(...severityStatuses);
+      }
+
+      const searchQuery = String(query || "").trim();
+      if (searchQuery) {
+        conditions.push("(to_email LIKE ? OR request_id LIKE ?)");
+        const like = `%${searchQuery}%`;
+        params.push(like, like);
+      }
+
+      const whereClause = conditions.length ? `WHERE ${conditions.join(" AND ")}` : "";
+
+      return db.all(
+        `SELECT id, request_id, event_type, status, attempt, to_email, subject, category,
+                accepted, rejected, error_code, error_message, created_at
+         FROM mail_events
+         ${whereClause}
+         ORDER BY id DESC
+         LIMIT ? OFFSET ?`,
+        ...params,
+        Number(limit),
+        Number(offset)
+      );
+    },
+
     async countMailEventsByStatusSince({ status, sinceIso }) {
       const row = await db.get(
         `SELECT COUNT(*) AS count
@@ -432,6 +530,21 @@ async function createRepository({ dbPath }) {
            AND datetime(created_at) >= datetime(?)`,
         status,
         sinceIso
+      );
+
+      return row ? row.count : 0;
+    },
+
+    async countMailEventsByStatusBetween({ status, startIso, endIso }) {
+      const row = await db.get(
+        `SELECT COUNT(*) AS count
+         FROM mail_events
+         WHERE status = ?
+           AND datetime(created_at) >= datetime(?)
+           AND datetime(created_at) < datetime(?)`,
+        status,
+        startIso,
+        endIso
       );
 
       return row ? row.count : 0;
@@ -601,6 +714,198 @@ async function createRepository({ dbPath }) {
          ORDER BY datetime(last_seen_at) DESC
          LIMIT ?`,
         limit
+      );
+    },
+
+    async insertDashboardMetricSnapshot(snapshot) {
+      const result = await db.run(
+        `INSERT INTO dashboard_metric_snapshots (
+          captured_at,
+          cpu_pct,
+          memory_used_pct,
+          disk_pct,
+          load_1m,
+          ssh_fails_24h,
+          pm2_online,
+          queue_pending,
+          queue_retrying,
+          queue_failed,
+          sent_24h,
+          failed_24h,
+          quota_used,
+          quota_limit,
+          relay_ok,
+          risk_score
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        snapshot.capturedAt || nowIso(),
+        snapshot.cpuPct ?? null,
+        snapshot.memoryUsedPct ?? null,
+        snapshot.diskPct ?? null,
+        snapshot.load1m ?? null,
+        snapshot.sshFails24h ?? null,
+        snapshot.pm2Online ?? null,
+        snapshot.queuePending || 0,
+        snapshot.queueRetrying || 0,
+        snapshot.queueFailed || 0,
+        snapshot.sent24h || 0,
+        snapshot.failed24h || 0,
+        snapshot.quotaUsed || 0,
+        snapshot.quotaLimit || 0,
+        snapshot.relayOk ? 1 : 0,
+        snapshot.riskScore || 0
+      );
+
+      return db.get("SELECT * FROM dashboard_metric_snapshots WHERE id = ?", result.lastID);
+    },
+
+    async listDashboardMetricSnapshotsSince({ sinceIso, limit = 10000 } = {}) {
+      return db.all(
+        `SELECT * FROM dashboard_metric_snapshots
+         WHERE datetime(captured_at) >= datetime(?)
+         ORDER BY datetime(captured_at) ASC
+         LIMIT ?`,
+        sinceIso,
+        Number(limit)
+      );
+    },
+
+    async getLatestDashboardMetricSnapshot() {
+      return db.get(
+        `SELECT * FROM dashboard_metric_snapshots
+         ORDER BY datetime(captured_at) DESC
+         LIMIT 1`
+      );
+    },
+
+    async getLatestDashboardMetricSnapshotBefore({ beforeIso }) {
+      return db.get(
+        `SELECT * FROM dashboard_metric_snapshots
+         WHERE datetime(captured_at) < datetime(?)
+         ORDER BY datetime(captured_at) DESC
+         LIMIT 1`,
+        beforeIso
+      );
+    },
+
+    async getDeliveryFunnel(sinceIso) {
+      const row = await db.get(
+        `WITH latest AS (
+           SELECT request_id, MAX(id) AS max_id
+           FROM mail_events
+           WHERE datetime(created_at) >= datetime(?)
+           GROUP BY request_id
+         )
+         SELECT
+           COUNT(*) AS total_requests,
+           SUM(CASE WHEN e.status = 'sent' THEN 1 ELSE 0 END) AS sent_requests,
+           SUM(CASE WHEN e.status = 'failed' THEN 1 ELSE 0 END) AS failed_requests,
+           SUM(CASE WHEN e.status = 'retrying' THEN 1 ELSE 0 END) AS retrying_requests,
+           SUM(CASE WHEN e.status = 'queued' THEN 1 ELSE 0 END) AS queued_requests
+         FROM latest l
+         JOIN mail_events e ON e.id = l.max_id`,
+        sinceIso
+      );
+
+      return {
+        totalRequests: row?.total_requests || 0,
+        sentRequests: row?.sent_requests || 0,
+        failedRequests: row?.failed_requests || 0,
+        retryingRequests: row?.retrying_requests || 0,
+        queuedRequests: row?.queued_requests || 0,
+      };
+    },
+
+    async getTopErrorCodes(sinceIso, limit = 5) {
+      return db.all(
+        `SELECT
+           COALESCE(NULLIF(error_code, ''), 'unknown') AS code,
+           COUNT(*) AS count
+         FROM mail_events
+         WHERE datetime(created_at) >= datetime(?)
+           AND status IN ('failed', 'retrying')
+         GROUP BY COALESCE(NULLIF(error_code, ''), 'unknown')
+         ORDER BY count DESC, code ASC
+         LIMIT ?`,
+        sinceIso,
+        Number(limit)
+      );
+    },
+
+    async getCategoryBreakdown(sinceIso) {
+      return db.all(
+        `SELECT
+           COALESCE(NULLIF(category, ''), 'uncategorized') AS category,
+           COUNT(*) AS count
+         FROM mail_events
+         WHERE datetime(created_at) >= datetime(?)
+         GROUP BY COALESCE(NULLIF(category, ''), 'uncategorized')
+         ORDER BY count DESC, category ASC`,
+        sinceIso
+      );
+    },
+
+    async getStatusTimeBuckets(sinceIso, bucketMinutes = 15) {
+      const bucketSeconds = Math.max(1, Number(bucketMinutes)) * 60;
+
+      return db.all(
+        `SELECT
+           datetime((CAST(strftime('%s', created_at) AS INTEGER) / ?) * ?, 'unixepoch') AS bucket_at,
+           status,
+           COUNT(*) AS count
+         FROM mail_events
+         WHERE datetime(created_at) >= datetime(?)
+           AND status IN ('sent', 'failed', 'retrying')
+         GROUP BY bucket_at, status
+         ORDER BY datetime(bucket_at) ASC`,
+        bucketSeconds,
+        bucketSeconds,
+        sinceIso
+      );
+    },
+
+    async getQueueAgingSnapshot() {
+      const row = await db.get(
+        `SELECT
+           SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END) AS pending_count,
+           SUM(CASE WHEN status = 'retrying' THEN 1 ELSE 0 END) AS retrying_count,
+           SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END) AS failed_count,
+           MIN(
+             CASE
+               WHEN status IN ('pending', 'retrying', 'processing')
+               THEN datetime(created_at)
+               ELSE NULL
+             END
+           ) AS oldest_open_created_at
+         FROM mail_queue`
+      );
+
+      return {
+        pending: row?.pending_count || 0,
+        retrying: row?.retrying_count || 0,
+        failed: row?.failed_count || 0,
+        oldestOpenCreatedAt: row?.oldest_open_created_at || null,
+      };
+    },
+
+    async getQuotaBurnRate(sinceIso) {
+      const row = await db.get(
+        `SELECT COUNT(*) AS sent_count
+         FROM mail_events
+         WHERE status = 'sent'
+           AND datetime(created_at) >= datetime(?)`,
+        sinceIso
+      );
+
+      return {
+        sentCount: row?.sent_count || 0,
+      };
+    },
+
+    async cleanupOldDashboardMetricSnapshots(retentionDays) {
+      await db.run(
+        `DELETE FROM dashboard_metric_snapshots
+         WHERE datetime(captured_at) < datetime('now', ?)`,
+        `-${Number(retentionDays)} days`
       );
     },
   };

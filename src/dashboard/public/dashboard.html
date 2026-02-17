@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Email-VPS Balanced NOC</title>
+  <link rel="stylesheet" href="/dashboard/assets/dashboard.css" />
+</head>
+<body>
+  <main class="shell shell-dashboard">
+    <header class="masthead">
+      <div>
+        <p class="eyebrow">Private Operations Console</p>
+        <h1>Email-VPS Balanced NOC</h1>
+        <p id="dashboardSubline" class="subline">Loading operational telemetry...</p>
+      </div>
+      <div class="control-row">
+        <select id="trendWindow" aria-label="Time window">
+          <option value="24h">Last 24h</option>
+          <option value="7d">Last 7d</option>
+          <option value="30d">Last 30d</option>
+        </select>
+        <button id="refreshBtn" type="button">Refresh</button>
+        <button id="logoutBtn" type="button" class="danger">Logout</button>
+      </div>
+    </header>
+
+    <section class="health-strip" id="healthStrip"></section>
+
+    <section class="kpi-grid" id="kpiGrid"></section>
+
+    <section class="insight-grid">
+      <article class="panel panel-wide">
+        <div class="panel-head">
+          <div>
+            <h2>Delivery Volume</h2>
+            <p class="meta">Sent, failed, and retrying activity by time bucket.</p>
+          </div>
+        </div>
+        <div class="chart-shell">
+          <canvas id="deliveryChart"></canvas>
+        </div>
+      </article>
+
+      <article class="panel">
+        <div class="panel-head">
+          <div>
+            <h2>Actionable Insights</h2>
+            <p class="meta">Top issue, operator action, and impact context.</p>
+          </div>
+        </div>
+        <div id="actionPlan" class="action-plan"></div>
+      </article>
+
+      <article class="panel panel-wide">
+        <div class="panel-head">
+          <div>
+            <h2>Risk and Quota Burn Trend</h2>
+            <p class="meta">Composite host risk and quota utilization over time.</p>
+          </div>
+        </div>
+        <div class="chart-shell">
+          <canvas id="riskQuotaChart"></canvas>
+        </div>
+      </article>
+
+      <article class="panel">
+        <div class="panel-head">
+          <div>
+            <h2>Error Code Mix</h2>
+            <p class="meta">Most frequent delivery errors in selected window.</p>
+          </div>
+        </div>
+        <div class="chart-shell small">
+          <canvas id="errorChart"></canvas>
+        </div>
+      </article>
+    </section>
+
+    <section class="main-grid">
+      <article class="panel panel-wide">
+        <div class="panel-head between">
+          <div>
+            <h2>Recent Email Events</h2>
+            <p class="meta">Metadata only: recipient, category, status, attempts, and diagnostics.</p>
+          </div>
+          <div class="log-controls">
+            <input id="logSearch" type="search" placeholder="Search recipient or request ID" />
+            <select id="logStatusFilter" aria-label="Filter by status">
+              <option value="">All status</option>
+              <option value="sent">Sent</option>
+              <option value="failed">Failed</option>
+              <option value="retrying">Retrying</option>
+              <option value="queued">Queued</option>
+            </select>
+            <select id="logCategoryFilter" aria-label="Filter by category">
+              <option value="">All categories</option>
+            </select>
+            <select id="logSeverityFilter" aria-label="Filter by severity">
+              <option value="">All severities</option>
+              <option value="critical">Critical</option>
+              <option value="warning">Warning</option>
+              <option value="info">Info</option>
+            </select>
+            <button id="logApplyBtn" type="button">Apply</button>
+          </div>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Time</th>
+                <th>Recipient</th>
+                <th>Request ID</th>
+                <th>Category</th>
+                <th>Status</th>
+                <th>Attempt</th>
+                <th>Error</th>
+              </tr>
+            </thead>
+            <tbody id="logsTableBody"></tbody>
+          </table>
+        </div>
+      </article>
+
+      <aside class="side-stack">
+        <article class="panel">
+          <div class="panel-head">
+            <div>
+              <h3>Security Posture</h3>
+              <p class="meta">Host hardening and telemetry freshness.</p>
+            </div>
+          </div>
+          <div class="mini-grid" id="securityGrid"></div>
+          <div class="diagnostics" id="diagnostics"></div>
+        </article>
+
+        <article class="panel">
+          <div class="panel-head">
+            <div>
+              <h3>System Alerts</h3>
+              <p class="meta">Grouped by severity with active state visibility.</p>
+            </div>
+          </div>
+          <div id="alertSummary" class="alert-summary"></div>
+          <ul class="alert-list" id="alertList"></ul>
+        </article>
+      </aside>
+    </section>
+  </main>
+
+  <script src="/dashboard/assets/vendor/chart.umd.js"></script>
+  <script src="/dashboard/assets/dashboard-app.js"></script>
+</body>
+</html>

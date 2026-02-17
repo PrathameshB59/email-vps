@@ -11,7 +11,10 @@ function createLocalOnlyMiddleware({ allowNonLocal, allowTestHeader = false }) {
     }
 
     const testHeaderIp = allowTestHeader ? req.get("x-test-remote-address") : null;
-    const ip = testHeaderIp || req.socket?.remoteAddress || req.ip;
+    const resolvedIp = testHeaderIp || req.ip || req.socket?.remoteAddress || "";
+    const ip = String(resolvedIp).startsWith("::ffff:")
+      ? String(resolvedIp).slice(7)
+      : String(resolvedIp);
 
     if (!LOOPBACK_ADDRESSES.has(ip)) {
       return res.status(403).json({

@@ -5,25 +5,20 @@
   "main": "src/server.js",
   "type": "commonjs",
   "scripts": {
-    "start": "npm run start:mail",
+    "start": "node src/server.js",
     "start:mail": "node src/server.js",
-    "start:admin": "node src/admin/server.js",
     "dev": "node --watch src/server.js",
-    "dev:admin": "node --watch src/admin/server.js",
     "test": "node --test test",
     "mail:test": "node src/cli/mail-test.js",
-    "mail:send": "node src/cli/mail-send.js",
-    "seed:admin": "node src/admin/seed-admin.js"
+    "mail:send": "node src/cli/mail-send.js"
   },
   "engines": {
     "node": ">=20"
   },
   "dependencies": {
-    "bcryptjs": "^2.4.3",
+    "chart.js": "^4.5.0",
     "dotenv": "^16.4.7",
     "express": "^4.21.2",
-    "helmet": "^8.0.0",
-    "jsonwebtoken": "^9.0.2",
     "nodemailer": "^6.10.0",
     "sqlite": "^5.1.1",
     "sqlite3": "^5.1.7",

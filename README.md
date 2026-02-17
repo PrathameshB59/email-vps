@@ -1,20 +1,14 @@
 # email-vps
 
-Email-VPS now includes:
+Single-process Email-VPS service with:
 
-- Phase 1+2 mail relay implementation (Postfix relay + queue + retries + quota + templates).
-- Section 15 secure admin dashboard service on localhost `127.0.0.1:9100`.
-
-## Services
-
-1. Mail service (`src/server.js`)
-- Serves `dashboard.html` and `metrics.json` on port `8081`.
-- Exposes `/api/v1/mail/*` with loopback-only + bearer token protection.
-
-2. Admin service (`src/admin/server.js`)
-- Serves `/admin/login`, `/admin/dashboard`, `/admin/logs`, `/admin/alerts`.
-- Exposes `/api/v1/admin/*` with JWT access/refresh auth.
-- Runs on `127.0.0.1:9100` behind Nginx reverse proxy.
+- Local-only mail API (`/api/v1/mail/*`) protected by bearer token.
+- One private web dashboard (`/login` -> `/dashboard`) protected by:
+  - env-based credentials,
+  - signed HttpOnly session cookie,
+  - IP allowlist.
+- SQLite-backed queue/events/quota plus dashboard metric snapshots (90-day retention).
+- Balanced NOC dashboard UI with Chart.js-driven operational insights.
 
 ## Install
 
@@ -23,33 +17,57 @@ npm install
 cp .env.example .env
 ```
 
-Set strong secrets in `.env`:
+## Required `.env` values
 
 - `MAIL_API_TOKEN`
 - `MAIL_FROM`
-- `ADMIN_JWT_ACCESS_SECRET`
-- `ADMIN_JWT_REFRESH_SECRET`
+- `DASHBOARD_LOGIN_USER`
+- `DASHBOARD_LOGIN_PASS`
+- `DASHBOARD_SESSION_SECRET`
+- `DASHBOARD_ALLOWED_IPS`
+
+Production bind:
+
+- `HOST=127.0.0.1`
+- `PORT=8081`
 
 ## Run
 
-Mail service:
-
 ```bash
-npm run start:mail
+npm start
 ```
 
-Admin service:
+## Dashboard Routes
 
-```bash
-npm run start:admin
-```
+Auth and pages:
+
+- `GET /login`
+- `POST /auth/login`
+- `POST /auth/logout`
+- `GET /auth/session`
+- `GET /dashboard`
+
+Protected dashboard data APIs:
+
+- `GET /api/v1/dashboard/overview`
+- `GET /api/v1/dashboard/trends?window=24h|7d|30d`
+- `GET /api/v1/dashboard/timeseries?window=24h|7d|30d`
+- `GET /api/v1/dashboard/insights?window=24h|7d|30d`
+- `GET /api/v1/dashboard/logs?status=&category=&severity=&q=`
+- `GET /api/v1/dashboard/alerts`
+- `GET /api/v1/dashboard/security`
+
+Compatibility behavior:
+
+- `/admin/*` -> `302 /dashboard`
+- `/api/v1/admin/*` -> `410 ADMIN_API_DEPRECATED`
 
 ## Mail API
 
-All routes require:
+All `/api/v1/mail/*` routes require:
 
 - `Authorization: Bearer <MAIL_API_TOKEN>`
-- Loopback source by default (`127.0.0.1` / `::1`)
+- loopback source (`127.0.0.1` / `::1`) unless `MAIL_ALLOW_NON_LOCAL=true`
 
 Routes:
 
@@ -59,86 +77,75 @@ Routes:
 - `GET /api/v1/mail/quota`
 - `GET /api/v1/mail/events`
 
-## Admin API
+## Template Variables (Ops Incident Digest)
 
-Auth routes:
+`system-alert` and `app-notification` support:
 
-- `POST /api/v1/admin/auth/login`
-- `POST /api/v1/admin/auth/refresh`
-- `POST /api/v1/admin/auth/logout`
-
-Protected routes:
-
-- `GET /api/v1/admin/overview`
-- `GET /api/v1/admin/logs`
-- `GET /api/v1/admin/quota`
-- `GET /api/v1/admin/alerts`
-- `GET /api/v1/admin/relay-health`
+- required/common: `title`, `severity`, `details`
+- optional incident context: `summary`, `impact`, `probableCause`, `recommendedAction`, `nextUpdateEta`
+- metadata/action links: `environment`, `service`, `incidentId`, `requestId`, `dashboardUrl`, `runbookUrl`, `timestamp`
 
 ## CLI
 
 ```bash
 npm run mail:test -- --to you@example.com
-npm run mail:send -- --to you@example.com --template system-alert --vars title=CPU,details=High,severity=warning
+npm run mail:send -- --to you@example.com --template system-alert --vars title=CPU,summary=High,probableCause=Load,severity=warning
 ```
 
-Seed admin user:
+## Storage
 
-```bash
-npm run seed:admin -- --email admin@stackpilot.in --password 'StrongPasswordHere'
-```
-
-## Data Storage
-
-SQLite DB:
+SQLite file:
 
 - `data/email_vps.sqlite`
 
-Primary tables:
+Primary active tables:
 
 - `mail_queue`
 - `mail_events`
 - `daily_quota`
-- `admin_users`
-- `admin_sessions`
-- `admin_auth_events`
 - `system_alert_state`
+- `dashboard_metric_snapshots`
+- `admin_auth_events` (dashboard login audit trail)
 
-## Runtime Checkpoints
+## Public Access Recovery (NXDOMAIN)
 
-PM2 target scripts:
+If `mail.stackpilot.in` is not reachable publicly but local app works:
 
-- `email-vps` -> `/home/devuser/dev/email-vps/src/server.js`
-- `email-vps-admin` -> `/home/devuser/dev/email-vps/src/admin/server.js`
-
-Metrics cron target:
-
-- `* * * * * /home/devuser/dev/email-vps/generate_metrics.sh`
-
-Postfix check:
+1. Verify DNS:
 
 ```bash
-systemctl status postfix
-ss -tulpn | grep ':25'
+dig +short mail.stackpilot.in A
 ```
 
-Security target is localhost-only SMTP listener. If your host currently exposes `:25`, apply privileged hardening:
+2. If empty, create DNS record at provider:
+
+- Type: `A`
+- Host: `mail`
+- Value: `<your_vps_public_ip>`
+
+3. Verify Nginx and TLS:
 
 ```bash
-sudo postconf -e 'inet_interfaces = loopback-only'
-sudo systemctl restart postfix
+sudo nginx -t
+sudo systemctl reload nginx
+sudo certbot --nginx -d mail.stackpilot.in
 ```
 
-## Deployment Artifacts
+4. Validate local app still healthy:
 
-- Nginx config: `deploy/nginx/mail.stackpilot.in.conf`
-- PM2 ecosystem: `deploy/pm2/admin-ecosystem.config.cjs`
-- Section 15 runbook: `docs/SECTION15_RUNBOOK.md`
+```bash
+curl -i http://127.0.0.1:8081/health
+curl -i http://127.0.0.1:8081/login
+```
+
+## Deployment Assets
+
+- Nginx: `deploy/nginx/mail.stackpilot.in.conf`
+- PM2: `deploy/pm2/ecosystem.config.cjs`
+- Runbook: `docs/SECTION15_RUNBOOK.md`
 
 ## Tests
 
 ```bash
 npm test
 ```
-
-Covers env parsing, retry policy, quota behavior, queue recovery, API auth/local-only enforcement, template rendering, and metrics path migration.

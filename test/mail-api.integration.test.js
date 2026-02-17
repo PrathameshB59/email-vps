@@ -32,6 +32,10 @@ test("mail API enforces auth and local-only rules", async () => {
       DB_PATH: dbPath,
       MAIL_RETRY_BASE_MS: "10",
       MAIL_DAILY_LIMIT: "500",
+      DASHBOARD_LOGIN_USER: "owner",
+      DASHBOARD_LOGIN_PASS: "dashboard-pass",
+      DASHBOARD_SESSION_SECRET: "dashboard-session-secret",
+      DASHBOARD_ALLOWED_IPS: "127.0.0.1",
     },
     transport,
   });
@@ -41,6 +45,7 @@ test("mail API enforces auth and local-only rules", async () => {
     mailService: core.mailService,
     rateLimiter: core.rateLimiter,
     repository: core.repository,
+    dashboardService: core.dashboardService,
   });
 
   try {

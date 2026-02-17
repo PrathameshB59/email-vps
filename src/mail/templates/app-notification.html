@@ -3,29 +3,93 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>App Notification</title>
+  <title>Ops Notification Digest</title>
 </head>
-<body style="margin:0;padding:0;background:#0b1220;color:#dbeafe;font-family:Arial,sans-serif;">
-  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="padding:24px 0;">
+<body style="margin:0;padding:0;background:#091423;font-family:'Segoe UI',Tahoma,Geneva,Verdana,sans-serif;color:#e6f2ff;">
+  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="padding:24px 10px;">
     <tr>
       <td align="center">
-        <table role="presentation" width="640" cellspacing="0" cellpadding="0" style="max-width:640px;background:#0f172a;border-radius:12px;overflow:hidden;">
+        <table role="presentation" width="680" cellspacing="0" cellpadding="0" style="max-width:680px;background:#0d1c30;border:1px solid #263f5d;border-radius:16px;overflow:hidden;">
           <tr>
-            <td style="padding:20px 24px;background:#0369a1;color:#ffffff;font-size:20px;font-weight:bold;">
-              Email-VPS App Notification
+            <td style="padding:18px 22px;background:linear-gradient(90deg,#0b7da0,#36b3dd);color:#ffffff;">
+              <table role="presentation" width="100%" cellspacing="0" cellpadding="0">
+                <tr>
+                  <td style="font-size:24px;font-weight:700;line-height:1.2;">Email-VPS App Notification Digest</td>
+                  <td align="right">
+                    <span style="display:inline-block;border:1px solid rgba(255,255,255,0.45);padding:4px 10px;border-radius:999px;font-size:12px;font-weight:600;letter-spacing:0.06em;">{{severityUpper}}</span>
+                  </td>
+                </tr>
+              </table>
+              <p style="margin:10px 0 0;font-size:13px;opacity:0.95;">Incident ID: <strong>{{incidentId}}</strong></p>
             </td>
           </tr>
+
           <tr>
-            <td style="padding:24px;">
-              <p style="margin:0 0 12px 0;font-size:18px;color:#f8fafc;"><strong>{{title}}</strong></p>
-              <p style="margin:0 0 16px 0;">{{summary}}</p>
-              <p style="margin:0 0 8px 0;">Service: <strong>{{service}}</strong></p>
-              <p style="margin:0 0 16px 0;">Timestamp: <strong>{{timestamp}}</strong></p>
-              <p style="margin:0;">
-                <a href="{{action_url}}" style="display:inline-block;padding:10px 16px;background:#38bdf8;color:#0f172a;text-decoration:none;border-radius:8px;font-weight:bold;">
-                  Open Action
-                </a>
-              </p>
+            <td style="padding:18px 22px 0;">
+              <h1 style="margin:0 0 6px;font-size:24px;line-height:1.25;color:#f5f9ff;">{{title}}</h1>
+              <p style="margin:0 0 14px;color:#a4c4d7;font-size:15px;line-height:1.5;">{{summary}}</p>
+            </td>
+          </tr>
+
+          <tr>
+            <td style="padding:0 22px 18px;">
+              <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="border-collapse:separate;border-spacing:0 10px;">
+                <tr>
+                  <td style="background:#11263f;border:1px solid #35597c;border-radius:12px;padding:14px;">
+                    <p style="margin:0 0 6px;font-size:12px;letter-spacing:0.08em;text-transform:uppercase;color:#95d5f0;">What happened</p>
+                    <p style="margin:0;font-size:15px;line-height:1.45;color:#dcecf9;">{{summary}}</p>
+                  </td>
+                </tr>
+                <tr>
+                  <td style="background:#11263f;border:1px solid #35597c;border-radius:12px;padding:14px;">
+                    <p style="margin:0 0 6px;font-size:12px;letter-spacing:0.08em;text-transform:uppercase;color:#95d5f0;">Impact</p>
+                    <p style="margin:0;font-size:15px;line-height:1.45;color:#dcecf9;">{{impact}}</p>
+                  </td>
+                </tr>
+                <tr>
+                  <td style="background:#11263f;border:1px solid #35597c;border-radius:12px;padding:14px;">
+                    <p style="margin:0 0 6px;font-size:12px;letter-spacing:0.08em;text-transform:uppercase;color:#95d5f0;">Probable cause</p>
+                    <p style="margin:0;font-size:15px;line-height:1.45;color:#dcecf9;">{{probableCause}}</p>
+                  </td>
+                </tr>
+                <tr>
+                  <td style="background:#12324f;border:1px solid #48719a;border-radius:12px;padding:14px;">
+                    <p style="margin:0 0 8px;font-size:12px;letter-spacing:0.08em;text-transform:uppercase;color:#b4e5ff;">Recommended action checklist</p>
+                    <ol style="margin:0;padding-left:20px;color:#edf7ff;">
+                      <li style="margin-bottom:6px;line-height:1.45;">{{recommendedAction}}</li>
+                      <li style="margin-bottom:6px;line-height:1.45;">Cross-check notification category and queue status in dashboard logs.</li>
+                      <li style="line-height:1.45;">Publish the next status update by <strong>{{nextUpdateEta}}</strong>.</li>
+                    </ol>
+                  </td>
+                </tr>
+                <tr>
+                  <td style="background:#0a1a2c;border:1px solid #35597c;border-radius:12px;padding:14px;white-space:pre-wrap;font-family:'Courier New',Courier,monospace;color:#d6ebff;line-height:1.4;">
+                    {{details}}
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+
+          <tr>
+            <td style="padding:0 22px 22px;">
+              <table role="presentation" cellspacing="0" cellpadding="0">
+                <tr>
+                  <td style="padding-right:10px;">
+                    <a href="{{dashboardUrl}}" style="display:inline-block;padding:11px 16px;border-radius:10px;background:#34a8d7;color:#082033;text-decoration:none;font-weight:700;">Open Dashboard</a>
+                  </td>
+                  <td>
+                    <a href="{{runbookUrl}}" style="display:inline-block;padding:11px 16px;border-radius:10px;background:#143651;color:#d9efff;text-decoration:none;font-weight:700;border:1px solid #3a6489;">Open Runbook</a>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+
+          <tr>
+            <td style="padding:14px 22px 20px;border-top:1px solid #24415f;color:#9fc1d9;font-size:12px;line-height:1.5;">
+              <strong>Metadata</strong><br />
+              Service: {{service}} | Environment: {{environment}} | Timestamp: {{timestamp}} | Request ID: {{requestId}}
             </td>
           </tr>
         </table>

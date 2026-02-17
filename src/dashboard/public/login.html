@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Email-VPS Login</title>
+  <link rel="stylesheet" href="/dashboard/assets/dashboard.css" />
+</head>
+<body>
+  <main class="auth-shell">
+    <section class="auth-card">
+      <h1>Email-VPS Control Plane</h1>
+      <p>Private dashboard access for mail, security, and VPS health analytics.</p>
+      <form id="loginForm">
+        <label for="username">Username</label>
+        <input id="username" name="username" autocomplete="username" required />
+
+        <label for="password">Password</label>
+        <input id="password" name="password" type="password" autocomplete="current-password" required />
+
+        <button type="submit">Sign in</button>
+      </form>
+      <p class="error" id="errorMessage"></p>
+    </section>
+  </main>
+
+  <script src="/dashboard/assets/dashboard-app.js"></script>
+</body>
+</html>

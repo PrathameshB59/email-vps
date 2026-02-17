@@ -22,9 +22,24 @@ const boolFromString = z.preprocess((value) => {
   return value;
 }, z.boolean());
 
+const csvStringArray = z.preprocess((value) => {
+  if (Array.isArray(value)) {
+    return value;
+  }
+
+  if (typeof value !== "string") {
+    return value;
+  }
+
+  return value
+    .split(",")
+    .map((entry) => entry.trim())
+    .filter(Boolean);
+}, z.array(z.string().min(1)).min(1, "DASHBOARD_ALLOWED_IPS is required"));
+
 const envSchema = z.object({
   NODE_ENV: z.string().default("development"),
-  HOST: z.string().default("0.0.0.0"),
+  HOST: z.string().default("127.0.0.1"),
   PORT: z.coerce.number().int().positive().default(8081),
 
   MAIL_API_TOKEN: z.string().min(1, "MAIL_API_TOKEN is required"),
@@ -44,24 +59,22 @@ const envSchema = z.object({
   QUEUE_POLL_MS: z.coerce.number().int().positive().default(5000),
   QUEUE_BATCH_SIZE: z.coerce.number().int().positive().default(20),
 
-  ADMIN_HOST: z.string().default("127.0.0.1"),
-  ADMIN_PORT: z.coerce.number().int().positive().default(9100),
-  ADMIN_ALLOWED_ORIGIN: z.string().default("https://mail.stackpilot.in"),
-
-  ADMIN_JWT_ACCESS_SECRET: z.string().min(16).default("change-this-access-secret"),
-  ADMIN_JWT_REFRESH_SECRET: z.string().min(16).default("change-this-refresh-secret"),
-  ADMIN_ACCESS_TTL: z.string().default("15m"),
-  ADMIN_REFRESH_TTL: z.string().default("7d"),
-
-  ADMIN_LOGIN_RATE_LIMIT: z.coerce.number().int().positive().default(20),
-  ADMIN_LOGIN_RATE_WINDOW_MS: z.coerce.number().int().positive().default(60000),
-  ADMIN_LOCKOUT_THRESHOLD: z.coerce.number().int().positive().default(5),
-  ADMIN_LOCKOUT_WINDOW_MINUTES: z.coerce.number().int().positive().default(15),
-
-  ADMIN_SEED_EMAIL: z.string().default(""),
-  ADMIN_SEED_PASSWORD: z.string().default(""),
-  ADMIN_DEFAULT_ROLE: z.string().default("admin"),
-  ADMIN_METRICS_PATH: z.string().default(path.resolve(process.cwd(), "metrics.json")),
+  DASHBOARD_LOGIN_USER: z.string().min(1, "DASHBOARD_LOGIN_USER is required"),
+  DASHBOARD_LOGIN_PASS: z.string().min(1, "DASHBOARD_LOGIN_PASS is required"),
+  DASHBOARD_SESSION_SECRET: z
+    .string()
+    .min(16, "DASHBOARD_SESSION_SECRET must be at least 16 characters"),
+  DASHBOARD_SESSION_TTL_HOURS: z.coerce.number().int().positive().default(12),
+  DASHBOARD_ALLOWED_IPS: csvStringArray,
+  DASHBOARD_TRUST_PROXY: boolFromString.default(true),
+  DASHBOARD_METRIC_SNAPSHOT_MINUTES: z.coerce.number().int().positive().default(5),
+  DASHBOARD_RETENTION_DAYS: z.coerce.number().int().positive().default(90),
+  DASHBOARD_METRICS_PATH: z
+    .string()
+    .default(path.resolve(process.cwd(), "metrics.json")),
+  DASHBOARD_LOGIN_RATE_LIMIT: z.coerce.number().int().positive().default(5),
+  DASHBOARD_LOGIN_RATE_WINDOW_MS: z.coerce.number().int().positive().default(60000),
+  DASHBOARD_LOGIN_LOCKOUT_MINUTES: z.coerce.number().int().positive().default(15),
 });
 
 function parseEnv(rawEnv) {

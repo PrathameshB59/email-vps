@@ -10,15 +10,5 @@ module.exports = {
         NODE_ENV: "production",
       },
     },
-    {
-      name: "email-vps-admin",
-      script: "src/admin/server.js",
-      cwd: "/home/devuser/dev/email-vps",
-      instances: 1,
-      exec_mode: "fork",
-      env: {
-        NODE_ENV: "production",
-      },
-    },
   ],
 };

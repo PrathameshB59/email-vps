@@ -45,6 +45,10 @@ test("queue recovers pending retry items after restart", async () => {
       MAIL_RETRY_BASE_MS: "10",
       MAIL_RETRY_MAX: "3",
       QUEUE_POLL_MS: "10",
+      DASHBOARD_LOGIN_USER: "owner",
+      DASHBOARD_LOGIN_PASS: "dashboard-pass",
+      DASHBOARD_SESSION_SECRET: "dashboard-session-secret",
+      DASHBOARD_ALLOWED_IPS: "127.0.0.1",
     },
     transport: failingTransport,
   });
@@ -91,6 +95,10 @@ test("queue recovers pending retry items after restart", async () => {
       MAIL_RETRY_MAX: "3",
       QUEUE_POLL_MS: "10",
       QUEUE_BATCH_SIZE: "5",
+      DASHBOARD_LOGIN_USER: "owner",
+      DASHBOARD_LOGIN_PASS: "dashboard-pass",
+      DASHBOARD_SESSION_SECRET: "dashboard-session-secret",
+      DASHBOARD_ALLOWED_IPS: "127.0.0.1",
     },
     transport: successTransport,
   });

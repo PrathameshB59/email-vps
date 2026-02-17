@@ -3,6 +3,7 @@ const { createRuntime } = require("./runtime");
 async function startServer() {
   const runtime = await createRuntime();
   await runtime.retryQueue.start();
+  await runtime.dashboardSnapshotWorker.start();
 
   const server = runtime.app.listen(runtime.env.PORT, runtime.env.HOST, () => {
     console.log(
