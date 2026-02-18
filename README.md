@@ -3,12 +3,13 @@
 Single-process Email-VPS service with:
 
 - Local-only mail API (`/api/v1/mail/*`) protected by bearer token.
-- One private web dashboard (`/login` -> `/dashboard`) protected by:
-  - env-based credentials,
+- One multi-page operations console with:
+  - OTP-first login (email OTP primary),
+  - credential login backup,
   - signed HttpOnly session cookie,
-  - IP allowlist.
+  - optional IP allowlist toggle.
 - SQLite-backed queue/events/quota plus dashboard metric snapshots (90-day retention).
-- Balanced NOC dashboard UI with Chart.js-driven operational insights.
+- Balanced NOC overview plus dedicated deep-dive pages for activity, security, health, performance, stability, programs, and mail checks.
 
 ## Install
 
@@ -24,7 +25,14 @@ cp .env.example .env
 - `DASHBOARD_LOGIN_USER`
 - `DASHBOARD_LOGIN_PASS`
 - `DASHBOARD_SESSION_SECRET`
-- `DASHBOARD_ALLOWED_IPS`
+- `DASHBOARD_OTP_TO`
+- `DASHBOARD_MAIL_PROBE_TO`
+- `DASHBOARD_MAIL_PROBE_COOLDOWN_SECONDS`
+
+Optional hardening values:
+
+- `DASHBOARD_IP_ALLOWLIST_ENABLED=true`
+- `DASHBOARD_ALLOWED_IPS=<comma-separated-operator-ips>`
 
 Production bind:
 
@@ -43,9 +51,18 @@ Auth and pages:
 
 - `GET /login`
 - `POST /auth/login`
+- `POST /auth/otp/request`
+- `POST /auth/otp/verify`
 - `POST /auth/logout`
 - `GET /auth/session`
 - `GET /dashboard`
+- `GET /dashboard/activity`
+- `GET /dashboard/security`
+- `GET /dashboard/health`
+- `GET /dashboard/performance`
+- `GET /dashboard/stability`
+- `GET /dashboard/programs`
+- `GET /dashboard/mail`
 
 Protected dashboard data APIs:
 
@@ -56,6 +73,10 @@ Protected dashboard data APIs:
 - `GET /api/v1/dashboard/logs?status=&category=&severity=&q=`
 - `GET /api/v1/dashboard/alerts`
 - `GET /api/v1/dashboard/security`
+- `GET /api/v1/dashboard/activity`
+- `GET /api/v1/dashboard/programs`
+- `GET /api/v1/dashboard/mail-check`
+- `POST /api/v1/dashboard/mail-probe`
 
 Compatibility behavior:
 
@@ -105,6 +126,8 @@ Primary active tables:
 - `daily_quota`
 - `system_alert_state`
 - `dashboard_metric_snapshots`
+- `dashboard_otp_challenges`
+- `dashboard_otp_daily_quota`
 - `admin_auth_events` (dashboard login audit trail)
 
 ## Public Access Recovery (NXDOMAIN)
@@ -138,10 +161,29 @@ curl -i http://127.0.0.1:8081/health
 curl -i http://127.0.0.1:8081/login
 ```
 
+## Cron Noise Remediation (`/opt/stackpilot-monitor` legacy)
+
+If inbox receives cron errors for missing `/opt/stackpilot-monitor/generate_metrics.sh`, run:
+
+```bash
+bash deploy/ops/fix_metrics_cron.sh audit
+bash deploy/ops/fix_metrics_cron.sh apply-user
+sudo bash deploy/ops/fix_metrics_cron.sh audit-root
+sudo bash deploy/ops/fix_metrics_cron.sh apply-root
+```
+
+This removes stale user/root cron references, applies:
+
+`* * * * * /home/devuser/dev/email-vps/generate_metrics.sh >/dev/null 2>&1`
+
+and sets `MAILTO=""` for silent cron delivery.  
+Use dashboard alerts + logs for failure observability.
+
 ## Deployment Assets
 
 - Nginx: `deploy/nginx/mail.stackpilot.in.conf`
 - PM2: `deploy/pm2/ecosystem.config.cjs`
+- Cron fixer: `deploy/ops/fix_metrics_cron.sh`
 - Runbook: `docs/SECTION15_RUNBOOK.md`
 
 ## Tests

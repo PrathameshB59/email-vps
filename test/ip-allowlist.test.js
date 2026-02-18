@@ -41,3 +41,39 @@ test("allowlist middleware blocks non-allowlisted ip", async () => {
   assert.equal(res.statusCode, 403);
   assert.equal(res.body.error, "FORBIDDEN_IP");
 });
+
+test("allowlist middleware passes through when disabled", async () => {
+  const middleware = createIpAllowlistMiddleware({
+    enabled: false,
+    allowedIps: ["127.0.0.1"],
+  });
+
+  const req = {
+    ip: "203.0.113.55",
+    socket: {
+      remoteAddress: "203.0.113.55",
+    },
+  };
+
+  const res = {
+    statusCode: 200,
+    body: null,
+    status(code) {
+      this.statusCode = code;
+      return this;
+    },
+    json(payload) {
+      this.body = payload;
+      return this;
+    },
+  };
+
+  let nextCalled = false;
+  await middleware(req, res, () => {
+    nextCalled = true;
+  });
+
+  assert.equal(nextCalled, true);
+  assert.equal(req.dashboardClientIp, "203.0.113.55");
+  assert.equal(res.body, null);
+});

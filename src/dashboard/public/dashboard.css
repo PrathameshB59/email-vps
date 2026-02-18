@@ -418,6 +418,15 @@ td.mono {
   font-size: 0.78rem;
 }
 
+.process-command {
+  display: inline-block;
+  max-width: 100%;
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+
 tbody tr:hover {
   background: rgba(18, 56, 89, 0.33);
 }
@@ -542,6 +551,42 @@ tbody tr:hover {
   color: var(--text-muted);
 }
 
+.auth-section {
+  border: 1px solid var(--line-soft);
+  border-radius: 14px;
+  padding: 12px;
+  background: rgba(6, 27, 46, 0.8);
+}
+
+.auth-section + .auth-section,
+.auth-section + .auth-fallback {
+  margin-top: 12px;
+}
+
+.auth-section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.auth-section h2 {
+  margin: 0;
+  font-size: 1.01rem;
+}
+
+.auth-hint {
+  margin: 8px 0;
+  color: var(--text-dim);
+  font-size: 0.9rem;
+  overflow-wrap: anywhere;
+}
+
+.auth-actions {
+  display: grid;
+  margin-bottom: 10px;
+}
+
 .auth-card label {
   display: block;
   margin-bottom: 6px;
@@ -554,8 +599,35 @@ tbody tr:hover {
   margin-bottom: 12px;
 }
 
+.auth-card form {
+  margin: 0;
+}
+
 .auth-card button {
   width: 100%;
+}
+
+.auth-fallback {
+  margin-top: 12px;
+  border: 1px solid var(--line-soft);
+  border-radius: 12px;
+  background: rgba(5, 20, 36, 0.7);
+  padding: 8px 10px;
+}
+
+.auth-fallback > summary {
+  cursor: pointer;
+  color: var(--text-muted);
+  font-weight: 600;
+  list-style: none;
+}
+
+.auth-fallback > summary::-webkit-details-marker {
+  display: none;
+}
+
+.auth-fallback > form {
+  margin-top: 10px;
 }
 
 .error {
@@ -564,12 +636,207 @@ tbody tr:hover {
   font-size: 0.92rem;
 }
 
+.auth-meta {
+  margin: 6px 0 0;
+  min-height: 1.2em;
+  color: var(--text-dim);
+  font-size: 0.86rem;
+}
+
+.console-nav-shell {
+  border: 1px solid var(--line-soft);
+  border-radius: 14px;
+  background: rgba(4, 22, 39, 0.92);
+  box-shadow: var(--shadow-soft);
+  padding: 10px 12px;
+  display: grid;
+  gap: 10px;
+}
+
+.console-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-muted);
+  font-size: 0.84rem;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.console-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+  background: radial-gradient(circle at 30% 30%, #7efbe6, #1bb6a6);
+  box-shadow: 0 0 10px rgba(34, 212, 169, 0.55);
+}
+
+.console-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.console-tab {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 38px;
+  border-radius: 999px;
+  border: 1px solid rgba(98, 197, 255, 0.22);
+  background: rgba(8, 33, 58, 0.72);
+  color: var(--text-muted);
+  text-decoration: none;
+  font-size: 0.84rem;
+  font-weight: 600;
+  padding: 8px 14px;
+  transition: border-color 0.14s ease, color 0.14s ease, background 0.14s ease;
+}
+
+.console-tab:hover {
+  color: var(--text-main);
+  border-color: rgba(98, 197, 255, 0.52);
+}
+
+.console-tab.active {
+  color: var(--text-main);
+  border-color: rgba(98, 197, 255, 0.72);
+  background: linear-gradient(135deg, rgba(18, 72, 113, 0.95), rgba(10, 48, 82, 0.95));
+}
+
+.page-masthead {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 4px 2px;
+}
+
+.page-grid {
+  display: grid;
+  gap: 12px;
+}
+
+.page-grid > * {
+  min-width: 0;
+}
+
+.page-grid-1 {
+  grid-template-columns: 1fr;
+}
+
+.page-grid-2 {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.page-grid-3 {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.page-grid-4 {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.summary-item {
+  border: 1px solid var(--line-soft);
+  border-radius: 16px;
+  background: var(--bg-panel);
+  box-shadow: var(--shadow-soft);
+  padding: 12px 14px;
+  min-height: 96px;
+}
+
+.summary-label {
+  color: var(--text-muted);
+  font-size: 0.8rem;
+  margin-bottom: 6px;
+}
+
+.summary-value {
+  font-size: clamp(1.08rem, 1.2vw + 0.76rem, 1.82rem);
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.summary-sub {
+  margin-top: 8px;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  color: var(--text-dim);
+  font-size: 0.84rem;
+}
+
+.panel-body {
+  margin-top: 10px;
+  min-width: 0;
+}
+
+.kv-list {
+  display: grid;
+  gap: 8px;
+}
+
+.kv-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 10px;
+  border-bottom: 1px dashed rgba(120, 171, 215, 0.2);
+  padding-bottom: 7px;
+}
+
+.kv-row:last-child {
+  border-bottom: 0;
+  padding-bottom: 0;
+}
+
+.kv-row span {
+  color: var(--text-muted);
+  font-size: 0.86rem;
+}
+
+.kv-row strong {
+  color: var(--text-main);
+  font-size: 0.92rem;
+  overflow-wrap: anywhere;
+}
+
+.page-table-wrap {
+  max-height: none;
+}
+
+.page-table-wrap table {
+  min-width: 0;
+}
+
+.probe-status {
+  display: grid;
+  gap: 8px;
+}
+
+.probe-status p {
+  margin: 0;
+  color: var(--text-muted);
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
 @media (max-width: 1280px) {
   .health-strip {
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 
   .kpi-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .page-grid-4 {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .page-grid-3 {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
@@ -584,6 +851,11 @@ tbody tr:hover {
 
 @media (max-width: 1024px) {
   .masthead {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .page-masthead {
     align-items: flex-start;
     flex-direction: column;
   }
@@ -633,6 +905,12 @@ tbody tr:hover {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
+  .page-grid-4,
+  .page-grid-3,
+  .page-grid-2 {
+    grid-template-columns: 1fr;
+  }
+
   .panel {
     padding: 12px;
   }
@@ -666,6 +944,14 @@ tbody tr:hover {
   .log-controls button {
     width: 100%;
     min-width: 0;
+  }
+
+  .console-tabs {
+    width: 100%;
+  }
+
+  .console-tab {
+    flex: 1 1 48%;
   }
 
   .table-wrap {
@@ -767,6 +1053,10 @@ tbody tr:hover {
   .kpi-grid,
   .mini-grid {
     grid-template-columns: 1fr;
+  }
+
+  .console-tab {
+    flex: 1 1 100%;
   }
 
   .health-item,

@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Email-VPS Health Console</title>
+  <link rel="icon" href="/dashboard/assets/favicon.svg" type="image/svg+xml" />
+  <link rel="shortcut icon" href="/dashboard/assets/favicon.svg" type="image/svg+xml" />
+  <link rel="stylesheet" href="/dashboard/assets/dashboard.css" />
+</head>
+<body data-dashboard-page="health">
+  <main class="shell shell-dashboard">
+    <div id="dashboardNavMount"></div>
+
+    <header class="page-masthead">
+      <div>
+        <p class="eyebrow">Health Deep Dive</p>
+        <h1>Delivery and Host Health</h1>
+        <p id="pageSubline" class="subline">Loading relay, queue, quota, and host metrics...</p>
+      </div>
+      <div class="control-row">
+        <button id="refreshBtn" type="button">Refresh</button>
+        <button id="logoutBtn" type="button" class="danger">Logout</button>
+      </div>
+    </header>
+
+    <section id="healthSummary" class="page-grid page-grid-4"></section>
+    <section id="healthSignals" class="page-grid page-grid-2"></section>
+    <section id="healthTimeline" class="page-grid page-grid-1"></section>
+  </main>
+
+  <script src="/dashboard/assets/dashboard-nav.js"></script>
+  <script src="/dashboard/assets/dashboard-pages.js"></script>
+</body>
+</html>

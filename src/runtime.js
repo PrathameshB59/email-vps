@@ -8,6 +8,11 @@ const { createRetryQueue } = require("./mail/retryQueue");
 const { createDashboardAlertService } = require("./dashboard/services/alertService");
 const { createDashboardService } = require("./dashboard/services/dashboardService");
 const { createDashboardSnapshotWorker } = require("./dashboard/snapshotWorker");
+const { createProgramCheckerService } = require("./dashboard/services/programCheckerService");
+const { createMailCheckerService } = require("./dashboard/services/mailCheckerService");
+const { createActivityCheckerService } = require("./dashboard/services/activityCheckerService");
+const { createOtpAuthService } = require("./dashboard/services/otpAuthService");
+const { createHealthCheckService } = require("./dashboard/services/healthCheckService");
 
 async function createCore({ envOverrides = {}, transport = null, logger = console } = {}) {
   const env = loadEnv(envOverrides);
@@ -46,6 +51,34 @@ async function createCore({ envOverrides = {}, transport = null, logger = consol
     alertService: dashboardAlertService,
   });
 
+  const programCheckerService = createProgramCheckerService({
+    env,
+    repository,
+  });
+
+  const mailCheckerService = createMailCheckerService({
+    env,
+    repository,
+    mailService,
+  });
+
+  const activityCheckerService = createActivityCheckerService({
+    env,
+  });
+
+  const otpAuthService = createOtpAuthService({
+    env,
+    repository,
+    transport: mailTransport,
+    logger,
+  });
+
+  const healthCheckService = createHealthCheckService({
+    env,
+    mailService,
+    repository,
+  });
+
   const dashboardSnapshotWorker = createDashboardSnapshotWorker({
     dashboardService,
     pollMs: env.DASHBOARD_METRIC_SNAPSHOT_MINUTES * 60 * 1000,
@@ -68,6 +101,11 @@ async function createCore({ envOverrides = {}, transport = null, logger = consol
     mailService,
     retryQueue,
     dashboardService,
+    programCheckerService,
+    mailCheckerService,
+    activityCheckerService,
+    otpAuthService,
+    healthCheckService,
     dashboardSnapshotWorker,
     close,
   };
@@ -81,6 +119,11 @@ async function createRuntime(options = {}) {
     rateLimiter: core.rateLimiter,
     repository: core.repository,
     dashboardService: core.dashboardService,
+    programCheckerService: core.programCheckerService,
+    mailCheckerService: core.mailCheckerService,
+    activityCheckerService: core.activityCheckerService,
+    otpAuthService: core.otpAuthService,
+    healthCheckService: core.healthCheckService,
   });
 
   return {

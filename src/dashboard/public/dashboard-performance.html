@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Email-VPS Performance Console</title>
+  <link rel="icon" href="/dashboard/assets/favicon.svg" type="image/svg+xml" />
+  <link rel="shortcut icon" href="/dashboard/assets/favicon.svg" type="image/svg+xml" />
+  <link rel="stylesheet" href="/dashboard/assets/dashboard.css" />
+</head>
+<body data-dashboard-page="performance">
+  <main class="shell shell-dashboard">
+    <div id="dashboardNavMount"></div>
+
+    <header class="page-masthead">
+      <div>
+        <p class="eyebrow">Performance Deep Dive</p>
+        <h1>Throughput, Risk, and Quota Trend</h1>
+        <p id="pageSubline" class="subline">Loading charted time-series performance data...</p>
+      </div>
+      <div class="control-row">
+        <select id="trendWindow" aria-label="Time window">
+          <option value="24h">Last 24h</option>
+          <option value="7d">Last 7d</option>
+          <option value="30d">Last 30d</option>
+        </select>
+        <button id="refreshBtn" type="button">Refresh</button>
+        <button id="logoutBtn" type="button" class="danger">Logout</button>
+      </div>
+    </header>
+
+    <section id="performanceSummary" class="page-grid page-grid-4"></section>
+
+    <section class="page-grid page-grid-2">
+      <article class="panel">
+        <div class="panel-head">
+          <div>
+            <h2>Delivery Throughput</h2>
+            <p class="meta">Sent, failed, and retrying rates over selected window.</p>
+          </div>
+        </div>
+        <div class="chart-shell">
+          <canvas id="performanceDeliveryChart" role="img" aria-label="Performance delivery chart"></canvas>
+        </div>
+      </article>
+
+      <article class="panel">
+        <div class="panel-head">
+          <div>
+            <h2>Risk and Quota Profile</h2>
+            <p class="meta">Risk score and quota utilization trend.</p>
+          </div>
+        </div>
+        <div class="chart-shell">
+          <canvas id="performanceRiskChart" role="img" aria-label="Performance risk and quota chart"></canvas>
+        </div>
+      </article>
+    </section>
+
+    <section id="performanceTable" class="page-grid page-grid-1"></section>
+  </main>
+
+  <script src="/dashboard/assets/dashboard-nav.js"></script>
+  <script src="/dashboard/assets/vendor/chart.umd.js"></script>
+  <script src="/dashboard/assets/dashboard-pages.js"></script>
+</body>
+</html>

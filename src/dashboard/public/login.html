@@ -12,17 +12,48 @@
   <main class="auth-shell">
     <section class="auth-card">
       <h1>Email-VPS Control Plane</h1>
-      <p>Private dashboard access for mail, security, and VPS health analytics.</p>
-      <form id="loginForm">
-        <label for="username">Username</label>
-        <input id="username" name="username" autocomplete="username" required />
+      <p>Primary sign-in uses one-time email verification. Credentials remain available as backup.</p>
 
-        <label for="password">Password</label>
-        <input id="password" name="password" type="password" autocomplete="current-password" required />
+      <section class="auth-section auth-section-primary" id="otpSection">
+        <div class="auth-section-head">
+          <h2>Primary Login: Email OTP</h2>
+          <span class="badge secure" id="otpModeBadge">OTP</span>
+        </div>
+        <p class="auth-hint" id="otpHint">Request a one-time code to continue.</p>
+        <div class="auth-actions">
+          <button id="otpRequestBtn" type="button">Send OTP Code</button>
+        </div>
+        <form id="otpVerifyForm">
+          <label for="otpCode">Enter OTP code</label>
+          <input
+            id="otpCode"
+            name="otpCode"
+            inputmode="numeric"
+            pattern="[0-9]*"
+            maxlength="8"
+            placeholder="6-digit code"
+            autocomplete="one-time-code"
+            required
+          />
+          <button id="otpVerifyBtn" type="submit">Verify and Sign In</button>
+        </form>
+      </section>
 
-        <button type="submit">Sign in</button>
-      </form>
+      <details class="auth-fallback" id="credentialFallback">
+        <summary>Use backup credentials</summary>
+        <form id="loginForm">
+          <label for="username">Username</label>
+          <input id="username" name="username" autocomplete="username" required />
+
+          <label for="password">Password</label>
+          <input id="password" name="password" type="password" autocomplete="current-password" required />
+
+          <button type="submit">Sign in with credentials</button>
+        </form>
+      </details>
+
       <p class="error" id="errorMessage"></p>
+      <p class="auth-meta" id="authMeta"></p>
     </section>
   </main>
 

@@ -52,9 +52,14 @@ function createDashboardAlertService({ repository, env, verifyRelay }) {
     const pm2Online = metrics.ok ? normalizeInteger(metrics.data.pm2_online) : null;
     const risk = metrics.ok ? String(metrics.data.risk || "UNKNOWN") : "UNKNOWN";
 
-    const fail2banSummary = safeCommand("fail2ban-client", ["status"]);
+    const fail2banSummary =
+      metrics.ok && metrics.data.fail2ban_ok === "true"
+        ? metrics.data.fail2ban_summary || "available"
+        : safeCommand("fail2ban-client", ["status"]);
     const aideBaselinePresent =
-      fs.existsSync("/var/lib/aide/aide.db") || fs.existsSync("/var/lib/aide/aide.db.gz");
+      metrics.ok && metrics.data.aide_baseline_present !== undefined
+        ? metrics.data.aide_baseline_present === "true"
+        : fs.existsSync("/var/lib/aide/aide.db") || fs.existsSync("/var/lib/aide/aide.db.gz");
     const reportPath = fs.existsSync("/tmp/vps_report.html")
       ? "/tmp/vps_report.html"
       : fs.existsSync("/tmp/vps_report.txt")

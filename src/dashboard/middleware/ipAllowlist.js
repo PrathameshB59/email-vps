@@ -18,11 +18,17 @@ function resolveRequestIp(req) {
   return normalizeIp(req.ip || req.socket?.remoteAddress || "");
 }
 
-function createIpAllowlistMiddleware({ allowedIps }) {
+function createIpAllowlistMiddleware({ allowedIps, enabled = true }) {
   const allowSet = new Set((allowedIps || []).map(normalizeIp).filter(Boolean));
+  const allowlistEnabled = Boolean(enabled);
 
   return function ipAllowlist(req, res, next) {
     const requestIp = resolveRequestIp(req);
+    req.dashboardClientIp = requestIp;
+
+    if (!allowlistEnabled) {
+      return next();
+    }
 
     if (!allowSet.has(requestIp)) {
       return res.status(403).json({
@@ -31,7 +37,6 @@ function createIpAllowlistMiddleware({ allowedIps }) {
       });
     }
 
-    req.dashboardClientIp = requestIp;
     return next();
   };
 }

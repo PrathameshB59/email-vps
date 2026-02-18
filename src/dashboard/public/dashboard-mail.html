@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Email-VPS Mail Console</title>
+  <link rel="icon" href="/dashboard/assets/favicon.svg" type="image/svg+xml" />
+  <link rel="shortcut icon" href="/dashboard/assets/favicon.svg" type="image/svg+xml" />
+  <link rel="stylesheet" href="/dashboard/assets/dashboard.css" />
+</head>
+<body data-dashboard-page="mail">
+  <main class="shell shell-dashboard">
+    <div id="dashboardNavMount"></div>
+
+    <header class="page-masthead">
+      <div>
+        <p class="eyebrow">Mail Deep Dive</p>
+        <h1>Relay, Queue, and Delivery Probe</h1>
+        <p id="pageSubline" class="subline">Loading relay and queue diagnostics...</p>
+      </div>
+      <div class="control-row">
+        <button id="refreshBtn" type="button">Refresh</button>
+        <button id="probeBtn" type="button">Send Probe</button>
+        <button id="healthCheckBtn" type="button">Health Check</button>
+        <button id="retryStuckBtn" type="button">Retry Stuck</button>
+        <button id="failStuckBtn" type="button" class="danger">Fail Stuck</button>
+        <button id="logoutBtn" type="button" class="danger">Logout</button>
+      </div>
+    </header>
+
+    <section id="mailSummary" class="page-grid page-grid-4"></section>
+    <section id="mailDiagnostics" class="page-grid page-grid-2"></section>
+    <section id="mailProblems" class="page-grid page-grid-1"></section>
+    <section id="mailProbeResult" class="page-grid page-grid-1"></section>
+    <section id="mailHealthCheck" class="page-grid page-grid-1"></section>
+  </main>
+
+  <script src="/dashboard/assets/dashboard-nav.js"></script>
+  <script src="/dashboard/assets/dashboard-pages.js"></script>
+</body>
+</html>

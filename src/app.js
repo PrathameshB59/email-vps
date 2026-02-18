@@ -11,7 +11,77 @@ const {
 } = require("./dashboard/middleware/dashboardAuth");
 const { createDashboardRouter } = require("./dashboard/routes/dashboardRoutes");
 
-function createApp({ env, mailService, rateLimiter, repository, dashboardService }) {
+function createApp({
+  env,
+  mailService,
+  rateLimiter,
+  repository,
+  dashboardService,
+  programCheckerService = {
+    async getProgramsSnapshot() {
+      return {
+        timestamp: new Date().toISOString(),
+        overall: {
+          health: "unknown",
+          issueCount: 1,
+          issues: [
+            {
+              component: "program-checker",
+              health: "unknown",
+              message: "Program checker service is not configured.",
+            },
+          ],
+        },
+      };
+    },
+  },
+  mailCheckerService = {
+    async getMailCheck() {
+      return {
+        timestamp: new Date().toISOString(),
+        error: "MAIL_CHECKER_NOT_CONFIGURED",
+      };
+    },
+    async sendProbe() {
+      return {
+        ok: false,
+        error: "MAIL_CHECKER_NOT_CONFIGURED",
+      };
+    },
+  },
+  activityCheckerService = {
+    async getActivitySnapshot() {
+      return {
+        timestamp: new Date().toISOString(),
+        health: "unknown",
+        diagnostics: {
+          errors: ["ACTIVITY_CHECKER_NOT_CONFIGURED"],
+        },
+      };
+    },
+  },
+  otpAuthService = {
+    readChallengeIdFromRequest() {
+      return null;
+    },
+    setChallengeCookie() {},
+    clearChallengeCookie() {},
+    async requestOtp() {
+      throw new Error("OTP_AUTH_NOT_CONFIGURED");
+    },
+    async verifyOtp() {
+      throw new Error("OTP_AUTH_NOT_CONFIGURED");
+    },
+  },
+  healthCheckService = {
+    async getStatus() {
+      return { error: "HEALTH_CHECK_NOT_CONFIGURED" };
+    },
+    async sendManual() {
+      return { ok: false, error: "HEALTH_CHECK_NOT_CONFIGURED" };
+    },
+  },
+}) {
   const app = express();
 
   if (env.DASHBOARD_TRUST_PROXY) {
@@ -30,6 +100,7 @@ function createApp({ env, mailService, rateLimiter, repository, dashboardService
   });
 
   const ipAllowlistMiddleware = createIpAllowlistMiddleware({
+    enabled: env.DASHBOARD_IP_ALLOWLIST_ENABLED,
     allowedIps: env.DASHBOARD_ALLOWED_IPS,
   });
 
@@ -75,6 +146,11 @@ function createApp({ env, mailService, rateLimiter, repository, dashboardService
       env,
       repository,
       dashboardService,
+      programCheckerService,
+      mailCheckerService,
+      activityCheckerService,
+      otpAuthService,
+      healthCheckService,
       sessionManager,
       loginRateLimiter,
       ipAllowlistMiddleware,

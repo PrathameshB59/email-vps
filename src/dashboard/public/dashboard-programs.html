@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Email-VPS Programs Console</title>
+  <link rel="icon" href="/dashboard/assets/favicon.svg" type="image/svg+xml" />
+  <link rel="shortcut icon" href="/dashboard/assets/favicon.svg" type="image/svg+xml" />
+  <link rel="stylesheet" href="/dashboard/assets/dashboard.css" />
+</head>
+<body data-dashboard-page="programs">
+  <main class="shell shell-dashboard">
+    <div id="dashboardNavMount"></div>
+
+    <header class="page-masthead">
+      <div>
+        <p class="eyebrow">Programs Deep Dive</p>
+        <h1>VPS Program Checker</h1>
+        <p id="pageSubline" class="subline">Loading systemd, PM2, Docker, listener, and worker status...</p>
+      </div>
+      <div class="control-row">
+        <button id="refreshBtn" type="button">Refresh</button>
+        <button id="logoutBtn" type="button" class="danger">Logout</button>
+      </div>
+    </header>
+
+    <section id="programsSummary" class="page-grid page-grid-4"></section>
+    <section id="programsServices" class="page-grid page-grid-2"></section>
+    <section id="programsInfra" class="page-grid page-grid-2"></section>
+  </main>
+
+  <script src="/dashboard/assets/dashboard-nav.js"></script>
+  <script src="/dashboard/assets/dashboard-pages.js"></script>
+</body>
+</html>

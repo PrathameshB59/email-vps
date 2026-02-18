@@ -148,6 +148,34 @@ async function createRepository({ dbPath }) {
     CREATE INDEX IF NOT EXISTS idx_admin_auth_events_email_created
       ON admin_auth_events(email, created_at);
 
+    CREATE TABLE IF NOT EXISTS dashboard_otp_challenges (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      challenge_id TEXT NOT NULL UNIQUE,
+      recipient_email TEXT NOT NULL,
+      code_hash TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'pending',
+      attempt_count INTEGER NOT NULL DEFAULT 0,
+      max_attempts INTEGER NOT NULL DEFAULT 5,
+      requested_ip TEXT,
+      user_agent TEXT,
+      expires_at TEXT NOT NULL,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      used_at TEXT,
+      last_attempt_at TEXT
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_dashboard_otp_challenges_status
+      ON dashboard_otp_challenges(status);
+
+    CREATE INDEX IF NOT EXISTS idx_dashboard_otp_challenges_created_at
+      ON dashboard_otp_challenges(created_at);
+
+    CREATE TABLE IF NOT EXISTS dashboard_otp_daily_quota (
+      quota_date TEXT PRIMARY KEY,
+      sent_count INTEGER NOT NULL DEFAULT 0,
+      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
     CREATE TABLE IF NOT EXISTS system_alert_state (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       alert_type TEXT NOT NULL UNIQUE,
@@ -370,6 +398,33 @@ async function createRepository({ dbPath }) {
       );
     },
 
+    async forceRetryAllStuck() {
+      const currentIso = nowIso();
+      const result = await db.run(
+        `UPDATE mail_queue
+         SET next_attempt_at = ?, updated_at = ?
+         WHERE status = 'retrying'
+           AND next_attempt_at <= ?`,
+        currentIso,
+        currentIso,
+        currentIso
+      );
+      return result.changes || 0;
+    },
+
+    async failAllStuck() {
+      const currentIso = nowIso();
+      const result = await db.run(
+        `UPDATE mail_queue
+         SET status = 'failed', updated_at = ?
+         WHERE status = 'retrying'
+           AND next_attempt_at <= ?`,
+        currentIso,
+        currentIso
+      );
+      return result.changes || 0;
+    },
+
     async recordEvent(event) {
       await db.run(
         `INSERT INTO mail_events (
@@ -401,6 +456,14 @@ async function createRepository({ dbPath }) {
         event.errorCode || null,
         event.errorMessage || null,
         event.metadataJson || null
+      );
+    },
+
+    async getLastHealthCheckEvent() {
+      return db.get(
+        `SELECT * FROM mail_events
+         WHERE category IN ('health-check', 'postfix-health-check')
+         ORDER BY id DESC LIMIT 1`
       );
     },
 
@@ -610,6 +673,176 @@ async function createRepository({ dbPath }) {
       );
 
       return row ? row.count : 0;
+    },
+
+    async reserveDashboardOtpQuota(quotaDate, limit) {
+      await db.run(
+        `INSERT OR IGNORE INTO dashboard_otp_daily_quota (quota_date, sent_count, updated_at)
+         VALUES (?, 0, datetime('now'))`,
+        quotaDate
+      );
+
+      const result = await db.run(
+        `UPDATE dashboard_otp_daily_quota
+         SET sent_count = sent_count + 1,
+             updated_at = datetime('now')
+         WHERE quota_date = ?
+           AND sent_count < ?`,
+        quotaDate,
+        Number(limit)
+      );
+
+      return result.changes === 1;
+    },
+
+    async releaseDashboardOtpQuota(quotaDate) {
+      await db.run(
+        `UPDATE dashboard_otp_daily_quota
+         SET sent_count = CASE WHEN sent_count > 0 THEN sent_count - 1 ELSE 0 END,
+             updated_at = datetime('now')
+         WHERE quota_date = ?`,
+        quotaDate
+      );
+    },
+
+    async getDashboardOtpQuota(quotaDate) {
+      const row = await db.get(
+        `SELECT quota_date, sent_count
+         FROM dashboard_otp_daily_quota
+         WHERE quota_date = ?`,
+        quotaDate
+      );
+
+      return {
+        quotaDate,
+        used: row ? Number(row.sent_count || 0) : 0,
+      };
+    },
+
+    async createOtpChallenge({
+      challengeId,
+      recipientEmail,
+      codeHash,
+      maxAttempts,
+      requestedIp = null,
+      userAgent = null,
+      expiresAt,
+    }) {
+      await db.run(
+        `INSERT INTO dashboard_otp_challenges (
+          challenge_id,
+          recipient_email,
+          code_hash,
+          status,
+          attempt_count,
+          max_attempts,
+          requested_ip,
+          user_agent,
+          expires_at,
+          created_at
+        ) VALUES (?, ?, ?, 'pending', 0, ?, ?, ?, ?, datetime('now'))`,
+        challengeId,
+        normalizeEmail(recipientEmail),
+        codeHash,
+        Number(maxAttempts),
+        requestedIp,
+        userAgent,
+        expiresAt
+      );
+
+      return repository.getOtpChallengeByChallengeId(challengeId);
+    },
+
+    async getOtpChallengeByChallengeId(challengeId) {
+      return db.get(
+        `SELECT * FROM dashboard_otp_challenges
+         WHERE challenge_id = ?
+         LIMIT 1`,
+        challengeId
+      );
+    },
+
+    async getLatestPendingOtpChallenge({ recipientEmail, requestedIp = null }) {
+      const conditions = ["recipient_email = ?", "status = 'pending'"];
+      const params = [normalizeEmail(recipientEmail)];
+
+      if (requestedIp) {
+        conditions.push("requested_ip = ?");
+        params.push(String(requestedIp));
+      }
+
+      return db.get(
+        `SELECT *
+         FROM dashboard_otp_challenges
+         WHERE ${conditions.join(" AND ")}
+         ORDER BY datetime(created_at) DESC
+         LIMIT 1`,
+        ...params
+      );
+    },
+
+    async incrementOtpAttempt({ challengeId }) {
+      await db.run(
+        `UPDATE dashboard_otp_challenges
+         SET attempt_count = attempt_count + 1,
+             last_attempt_at = datetime('now')
+         WHERE challenge_id = ?`,
+        challengeId
+      );
+
+      return repository.getOtpChallengeByChallengeId(challengeId);
+    },
+
+    async markOtpChallengeUsed({ challengeId }) {
+      await db.run(
+        `UPDATE dashboard_otp_challenges
+         SET status = 'used',
+             used_at = datetime('now')
+         WHERE challenge_id = ?`,
+        challengeId
+      );
+
+      return repository.getOtpChallengeByChallengeId(challengeId);
+    },
+
+    async expireOtpChallenge({ challengeId }) {
+      await db.run(
+        `UPDATE dashboard_otp_challenges
+         SET status = 'expired'
+         WHERE challenge_id = ?
+           AND status = 'pending'`,
+        challengeId
+      );
+
+      return repository.getOtpChallengeByChallengeId(challengeId);
+    },
+
+    async lockOtpChallenge({ challengeId }) {
+      await db.run(
+        `UPDATE dashboard_otp_challenges
+         SET status = 'locked'
+         WHERE challenge_id = ?
+           AND status = 'pending'`,
+        challengeId
+      );
+
+      return repository.getOtpChallengeByChallengeId(challengeId);
+    },
+
+    async cleanupExpiredOtpChallenges(retentionDays = 7) {
+      await db.run(
+        `UPDATE dashboard_otp_challenges
+         SET status = 'expired'
+         WHERE status = 'pending'
+           AND datetime(expires_at) < datetime('now')`
+      );
+
+      await db.run(
+        `DELETE FROM dashboard_otp_challenges
+         WHERE status IN ('used', 'expired', 'locked')
+           AND datetime(created_at) < datetime('now', ?)`,
+        `-${Number(retentionDays)} days`
+      );
     },
 
     async createAdminSession({ adminUserId, refreshTokenHash, expiresAt, ip = null, userAgent = null }) {

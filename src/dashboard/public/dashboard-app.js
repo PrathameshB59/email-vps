@@ -751,28 +751,184 @@ function bindResponsiveRerender() {
 }
 
 async function handleLoginPage() {
-  const form = document.getElementById("loginForm");
-  if (!form) return;
+  const fallbackForm = document.getElementById("loginForm");
+  const otpRequestBtn = document.getElementById("otpRequestBtn");
+  const otpVerifyForm = document.getElementById("otpVerifyForm");
+  const otpCodeInput = document.getElementById("otpCode");
+  const otpHint = document.getElementById("otpHint");
+  const otpSection = document.getElementById("otpSection");
+  const fallbackWrap = document.getElementById("credentialFallback");
+  const authMeta = document.getElementById("authMeta");
+  if (!fallbackForm || !otpSection) return;
 
+  let countdownTimer = null;
+  const clearOtpTimer = () => {
+    if (countdownTimer) {
+      clearInterval(countdownTimer);
+      countdownTimer = null;
+    }
+  };
+
+  const setMeta = (message) => {
+    if (authMeta) {
+      authMeta.textContent = message;
+    }
+  };
+
+  const setError = (message) => {
+    const errorEl = document.getElementById("errorMessage");
+    if (errorEl) {
+      errorEl.textContent = message || "";
+    }
+  };
+
+  const setOtpHint = (message) => {
+    if (otpHint) {
+      otpHint.textContent = message;
+    }
+  };
+
+  const setOtpControlsEnabled = (enabled) => {
+    const state = Boolean(enabled);
+    if (otpRequestBtn) otpRequestBtn.disabled = !state;
+    if (otpCodeInput) otpCodeInput.disabled = !state;
+    const otpVerifyBtn = document.getElementById("otpVerifyBtn");
+    if (otpVerifyBtn) otpVerifyBtn.disabled = !state;
+  };
+
+  const startOtpCountdown = (seconds) => {
+    const total = Number(seconds);
+    if (!Number.isFinite(total) || total <= 0 || !otpRequestBtn) {
+      return;
+    }
+
+    clearOtpTimer();
+    let remaining = Math.max(0, Math.trunc(total));
+    otpRequestBtn.disabled = true;
+    otpRequestBtn.textContent = `Resend in ${remaining}s`;
+
+    countdownTimer = setInterval(() => {
+      remaining -= 1;
+      if (remaining <= 0) {
+        clearOtpTimer();
+        otpRequestBtn.disabled = false;
+        otpRequestBtn.textContent = "Send OTP Code";
+        return;
+      }
+
+      otpRequestBtn.textContent = `Resend in ${remaining}s`;
+    }, 1000);
+  };
+
+  const applyAuthConfig = (authConfig) => {
+    const otpPrimaryEnabled = Boolean(authConfig?.otpPrimaryEnabled);
+    const backupEnabled = authConfig?.credentialsFallbackEnabled !== false;
+    const allowlistEnabled = Boolean(authConfig?.ipAllowlistEnabled);
+
+    if (!otpPrimaryEnabled) {
+      otpSection.hidden = true;
+      setMeta("OTP login is disabled. Use backup credentials.");
+      if (fallbackWrap) {
+        fallbackWrap.setAttribute("open", "open");
+      }
+    } else {
+      otpSection.hidden = false;
+      setMeta(
+        allowlistEnabled
+          ? "OTP login is active with IP allowlist enabled."
+          : "OTP login is active. Public access is allowed; session auth still required."
+      );
+    }
+
+    if (fallbackWrap) {
+      fallbackWrap.hidden = !backupEnabled;
+      if (!backupEnabled) {
+        fallbackWrap.removeAttribute("open");
+      }
+    }
+  };
+
+  let sessionPayload = null;
   try {
-    const session = await fetchJson("/auth/session");
-    if (session.authenticated) {
+    sessionPayload = await fetchJson("/auth/session");
+    if (sessionPayload.authenticated) {
       window.location.href = "/dashboard";
       return;
     }
   } catch (error) {
-    // user remains on login page
+    // keep login page
   }
 
-  const errorEl = document.getElementById("errorMessage");
+  applyAuthConfig(sessionPayload?.auth);
+  setOtpHint("Request a one-time code to continue.");
 
-  form.addEventListener("submit", async (event) => {
+  if (otpRequestBtn) {
+    otpRequestBtn.addEventListener("click", async () => {
+      setError("");
+      otpRequestBtn.disabled = true;
+      otpRequestBtn.textContent = "Sending...";
+
+      try {
+        const payload = await fetchJson("/auth/otp/request", {
+          method: "POST",
+          body: JSON.stringify({}),
+        });
+
+        const recipientHint = payload?.recipient ? ` to ${payload.recipient}` : "";
+        setOtpHint(`OTP sent${recipientHint}. Code expires in ${fmt(payload.expiresInSeconds)} seconds.`);
+        const cooldownSeconds = Number(payload.resendAvailableInSeconds || payload.retryAfterSeconds || 0);
+        if (cooldownSeconds > 0) {
+          startOtpCountdown(cooldownSeconds);
+        } else {
+          otpRequestBtn.disabled = false;
+          otpRequestBtn.textContent = "Send OTP Code";
+        }
+        if (otpCodeInput) {
+          otpCodeInput.focus();
+        }
+      } catch (error) {
+        otpRequestBtn.disabled = false;
+        otpRequestBtn.textContent = "Send OTP Code";
+        const retryAfter = error?.payload?.retryAfterSeconds;
+        if (retryAfter) {
+          startOtpCountdown(retryAfter);
+        }
+        setError(error.message);
+      }
+    });
+  }
+
+  if (otpVerifyForm) {
+    otpVerifyForm.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      setError("");
+
+      const code = String(otpCodeInput?.value || "").trim();
+      if (!code) {
+        setError("OTP code is required.");
+        return;
+      }
+
+      setOtpControlsEnabled(false);
+      try {
+        await fetchJson("/auth/otp/verify", {
+          method: "POST",
+          body: JSON.stringify({ code }),
+        });
+        clearOtpTimer();
+        window.location.href = "/dashboard";
+      } catch (error) {
+        setOtpControlsEnabled(true);
+        setError(error.message);
+      }
+    });
+  }
+
+  fallbackForm.addEventListener("submit", async (event) => {
     event.preventDefault();
-    if (errorEl) {
-      errorEl.textContent = "";
-    }
+    setError("");
 
-    const formData = new FormData(form);
+    const formData = new FormData(fallbackForm);
     const username = String(formData.get("username") || "").trim();
     const password = String(formData.get("password") || "");
 
@@ -783,9 +939,7 @@ async function handleLoginPage() {
       });
       window.location.href = "/dashboard";
     } catch (error) {
-      if (errorEl) {
-        errorEl.textContent = error.message;
-      }
+      setError(error.message);
     }
   });
 }
@@ -808,6 +962,10 @@ async function handleDashboardPage() {
   } catch (error) {
     window.location.href = "/login";
     return;
+  }
+
+  if (typeof window.mountDashboardNav === "function") {
+    window.mountDashboardNav();
   }
 
   bindResponsiveRerender();

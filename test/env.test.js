@@ -13,6 +13,7 @@ test("parseEnv applies defaults and coercion", () => {
     DASHBOARD_LOGIN_USER: "owner",
     DASHBOARD_LOGIN_PASS: "password-123",
     DASHBOARD_SESSION_SECRET: "dashboard-secret-value",
+    DASHBOARD_OTP_TO: "owner@example.com",
     DASHBOARD_ALLOWED_IPS: "127.0.0.1,198.51.100.22",
     MAIL_RETRY_MAX: "4",
     MAIL_RELAY_SECURE: "false",
@@ -23,4 +24,5 @@ test("parseEnv applies defaults and coercion", () => {
   assert.equal(parsed.MAIL_RELAY_SECURE, false);
   assert.deepEqual(parsed.DASHBOARD_ALLOWED_IPS, ["127.0.0.1", "198.51.100.22"]);
   assert.equal(parsed.DASHBOARD_SESSION_TTL_HOURS, 12);
+  assert.equal(parsed.DASHBOARD_OTP_PRIMARY_ENABLED, true);
 });

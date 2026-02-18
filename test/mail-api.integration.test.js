@@ -35,6 +35,7 @@ test("mail API enforces auth and local-only rules", async () => {
       DASHBOARD_LOGIN_USER: "owner",
       DASHBOARD_LOGIN_PASS: "dashboard-pass",
       DASHBOARD_SESSION_SECRET: "dashboard-session-secret",
+      DASHBOARD_OTP_TO: "owner@example.com",
       DASHBOARD_ALLOWED_IPS: "127.0.0.1",
     },
     transport,

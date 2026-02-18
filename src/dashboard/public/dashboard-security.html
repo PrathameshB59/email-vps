@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Email-VPS Security Console</title>
+  <link rel="icon" href="/dashboard/assets/favicon.svg" type="image/svg+xml" />
+  <link rel="shortcut icon" href="/dashboard/assets/favicon.svg" type="image/svg+xml" />
+  <link rel="stylesheet" href="/dashboard/assets/dashboard.css" />
+</head>
+<body data-dashboard-page="security">
+  <main class="shell shell-dashboard">
+    <div id="dashboardNavMount"></div>
+
+    <header class="page-masthead">
+      <div>
+        <p class="eyebrow">Security Deep Dive</p>
+        <h1>Host and Access Security</h1>
+        <p id="pageSubline" class="subline">Loading security posture and control checks...</p>
+      </div>
+      <div class="control-row">
+        <button id="refreshBtn" type="button">Refresh</button>
+        <button id="logoutBtn" type="button" class="danger">Logout</button>
+      </div>
+    </header>
+
+    <section id="securitySummary" class="page-grid page-grid-3"></section>
+    <section id="securityControls" class="page-grid page-grid-2"></section>
+    <section id="securityAlerts" class="page-grid page-grid-1"></section>
+  </main>
+
+  <script src="/dashboard/assets/dashboard-nav.js"></script>
+  <script src="/dashboard/assets/dashboard-pages.js"></script>
+</body>
+</html>

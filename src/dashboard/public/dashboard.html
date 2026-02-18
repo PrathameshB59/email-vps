@@ -8,8 +8,10 @@
   <link rel="shortcut icon" href="/dashboard/assets/favicon.svg" type="image/svg+xml" />
   <link rel="stylesheet" href="/dashboard/assets/dashboard.css" />
 </head>
-<body>
+<body data-dashboard-page="overview">
   <main class="shell shell-dashboard">
+    <div id="dashboardNavMount"></div>
+
     <header class="masthead">
       <div>
         <p class="eyebrow">Private Operations Console</p>
@@ -151,6 +153,7 @@
     </section>
   </main>
 
+  <script src="/dashboard/assets/dashboard-nav.js"></script>
   <script src="/dashboard/assets/vendor/chart.umd.js"></script>
   <script src="/dashboard/assets/dashboard-app.js"></script>
 </body>
