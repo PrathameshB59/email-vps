@@ -143,7 +143,16 @@ function deriveOperationalFocus({
   };
 }
 
-function createDashboardService({ repository, env, alertService }) {
+function createDashboardService({
+  repository,
+  env,
+  alertService,
+  opsInsightService = {
+    async getSecurityDiagnostics() {
+      return null;
+    },
+  },
+}) {
   async function getQuotaSnapshot() {
     const quota = await repository.getQuota(quotaDateIso());
     return {
@@ -538,9 +547,10 @@ function createDashboardService({ repository, env, alertService }) {
   }
 
   async function getSecurity() {
-    const [signals, alerts] = await Promise.all([
+    const [signals, alerts, opsDiagnostics] = await Promise.all([
       collectSignalInputs(),
       repository.listSystemAlertState(100),
+      opsInsightService.getSecurityDiagnostics().catch(() => null),
     ]);
 
     const riskScore = computeRiskScore({
@@ -577,6 +587,15 @@ function createDashboardService({ repository, env, alertService }) {
         fail2banSummary: signals.security.fail2banSummary,
         aideBaselinePresent: signals.security.aideBaselinePresent,
         lastDailyReportPath: signals.security.reportPath,
+        aideLastCheckAt: opsDiagnostics?.aideLastCheckAt || null,
+        fail2banJailSummary: opsDiagnostics?.fail2banJailSummary || null,
+        fail2banJails: Array.isArray(opsDiagnostics?.fail2banJails)
+          ? opsDiagnostics.fail2banJails
+          : [],
+        controlFreshness:
+          opsDiagnostics?.controlFreshnessMinutes == null
+            ? null
+            : Number(opsDiagnostics.controlFreshnessMinutes),
       },
       alerts,
     };

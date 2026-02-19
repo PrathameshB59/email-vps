@@ -55,12 +55,18 @@ svg {
   gap: 14px;
 }
 
+.console-nav-shell {
+  min-height: 108px;
+  width: 100%;
+}
+
 .masthead {
   display: flex;
   align-items: flex-end;
   justify-content: space-between;
   gap: 14px;
   padding: 8px 4px;
+  min-height: 112px;
 }
 
 .eyebrow {
@@ -88,6 +94,12 @@ h3 {
   margin: 7px 0 0;
   color: var(--text-muted);
   font-size: 0.92rem;
+  min-height: 1.3em;
+}
+
+.page-masthead .subline {
+  min-height: 2.5em;
+  line-height: 1.35;
 }
 
 .control-row {
@@ -558,6 +570,14 @@ tbody tr:hover {
   background: rgba(6, 27, 46, 0.8);
 }
 
+.auth-section[hidden] {
+  display: none !important;
+}
+
+.auth-section-secondary {
+  background: rgba(8, 24, 40, 0.8);
+}
+
 .auth-section + .auth-section,
 .auth-section + .auth-fallback {
   margin-top: 12px;
@@ -710,11 +730,68 @@ tbody tr:hover {
   justify-content: space-between;
   gap: 14px;
   padding: 4px 2px;
+  min-height: 112px;
+}
+
+.ops-subnav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  border: 1px solid var(--line-soft);
+  border-radius: 14px;
+  background: var(--bg-panel);
+  padding: 10px 12px;
+}
+
+.ops-subnav-chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 34px;
+  border-radius: 999px;
+  border: 1px solid rgba(98, 197, 255, 0.25);
+  background: rgba(8, 33, 58, 0.7);
+  color: var(--text-muted);
+  text-decoration: none;
+  font-size: 0.82rem;
+  font-weight: 600;
+  padding: 6px 12px;
+  transition: border-color 0.14s ease, color 0.14s ease, background 0.14s ease;
+}
+
+.ops-subnav-chip:hover {
+  color: var(--text-main);
+  border-color: rgba(98, 197, 255, 0.55);
+}
+
+.ops-subnav-chip.active {
+  color: var(--text-main);
+  border-color: rgba(98, 197, 255, 0.72);
+  background: linear-gradient(135deg, rgba(18, 72, 113, 0.95), rgba(10, 48, 82, 0.95));
 }
 
 .page-grid {
   display: grid;
   gap: 12px;
+}
+
+.ops-filter-row {
+  border: 1px solid var(--line-soft);
+  border-radius: 14px;
+  background: var(--bg-panel);
+  padding: 10px 12px;
+}
+
+.ops-filter-row .control-row {
+  flex-wrap: wrap;
+}
+
+.ops-filter-row select {
+  flex: 1 1 180px;
+}
+
+.ops-filter-row .meta {
+  margin-top: 8px;
 }
 
 .page-grid > * {
@@ -823,6 +900,26 @@ tbody tr:hover {
   overflow-wrap: anywhere;
 }
 
+.ops-hints {
+  display: grid;
+  gap: 8px;
+}
+
+.ops-hints code {
+  display: block;
+  overflow-wrap: anywhere;
+  border: 1px solid var(--line-soft);
+  border-radius: 10px;
+  background: rgba(6, 24, 42, 0.84);
+  color: var(--text-main);
+  padding: 8px 10px;
+}
+
+.process-command {
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
 @media (max-width: 1280px) {
   .health-strip {
     grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -853,16 +950,26 @@ tbody tr:hover {
   .masthead {
     align-items: flex-start;
     flex-direction: column;
+    min-height: 0;
   }
 
   .page-masthead {
     align-items: flex-start;
     flex-direction: column;
+    min-height: 0;
+  }
+
+  .console-nav-shell {
+    min-height: 122px;
   }
 
   .control-row {
     width: 100%;
     flex-wrap: wrap;
+  }
+
+  .ops-subnav-chip {
+    flex: 1 1 148px;
   }
 
   .insight-grid,
@@ -896,6 +1003,10 @@ tbody tr:hover {
 }
 
 @media (max-width: 820px) {
+  .console-nav-shell {
+    min-height: 154px;
+  }
+
   .health-strip {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
@@ -1030,6 +1141,10 @@ tbody tr:hover {
 }
 
 @media (max-width: 640px) {
+  .console-nav-shell {
+    min-height: 200px;
+  }
+
   .shell {
     width: min(1440px, calc(100% - 16px));
     margin-top: 12px;
@@ -1043,9 +1158,23 @@ tbody tr:hover {
     font-size: 0.85rem;
   }
 
+  .page-masthead .subline {
+    min-height: 3.1em;
+  }
+
   .control-row select,
   .control-row button,
   .control-row input {
+    width: 100%;
+  }
+
+  .ops-subnav {
+    padding: 9px;
+    gap: 8px;
+  }
+
+  .ops-subnav-chip {
+    flex: 1 1 100%;
     width: 100%;
   }
 
@@ -1084,6 +1213,10 @@ tbody tr:hover {
 }
 
 @media (max-width: 420px) {
+  .console-nav-shell {
+    min-height: 236px;
+  }
+
   .shell {
     width: calc(100% - 12px);
   }

@@ -176,6 +176,27 @@ async function createRepository({ dbPath }) {
       updated_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
 
+    CREATE TABLE IF NOT EXISTS dashboard_otp_delivery_events (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      otp_request_id TEXT NOT NULL,
+      challenge_id TEXT,
+      recipient_email TEXT NOT NULL,
+      delivery_stage TEXT NOT NULL,
+      provider_message_id TEXT,
+      error_code TEXT,
+      error_message TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_dashboard_otp_delivery_events_created_at
+      ON dashboard_otp_delivery_events(created_at);
+
+    CREATE INDEX IF NOT EXISTS idx_dashboard_otp_delivery_events_request
+      ON dashboard_otp_delivery_events(otp_request_id);
+
+    CREATE INDEX IF NOT EXISTS idx_dashboard_otp_delivery_events_challenge
+      ON dashboard_otp_delivery_events(challenge_id);
+
     CREATE TABLE IF NOT EXISTS system_alert_state (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       alert_type TEXT NOT NULL UNIQUE,
@@ -212,6 +233,28 @@ async function createRepository({ dbPath }) {
 
     CREATE INDEX IF NOT EXISTS idx_dashboard_metric_snapshots_captured_at
       ON dashboard_metric_snapshots(captured_at);
+
+    CREATE TABLE IF NOT EXISTS ops_events (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      source TEXT NOT NULL,
+      severity TEXT NOT NULL,
+      code TEXT NOT NULL,
+      title TEXT NOT NULL,
+      message TEXT NOT NULL,
+      fingerprint TEXT NOT NULL UNIQUE,
+      first_seen_at TEXT NOT NULL,
+      last_seen_at TEXT NOT NULL,
+      seen_count INTEGER NOT NULL DEFAULT 1,
+      status TEXT NOT NULL DEFAULT 'open',
+      raw_snippet TEXT,
+      metadata_json TEXT
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_ops_events_source_status_last_seen
+      ON ops_events(source, status, last_seen_at);
+
+    CREATE INDEX IF NOT EXISTS idx_ops_events_severity_status_last_seen
+      ON ops_events(severity, status, last_seen_at);
   `);
 
   const repository = {
@@ -845,6 +888,68 @@ async function createRepository({ dbPath }) {
       );
     },
 
+    async createDashboardOtpDeliveryEvent({
+      otpRequestId,
+      challengeId = null,
+      recipientEmail,
+      deliveryStage,
+      providerMessageId = null,
+      errorCode = null,
+      errorMessage = null,
+    }) {
+      await db.run(
+        `INSERT INTO dashboard_otp_delivery_events (
+          otp_request_id,
+          challenge_id,
+          recipient_email,
+          delivery_stage,
+          provider_message_id,
+          error_code,
+          error_message,
+          created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'))`,
+        String(otpRequestId || ""),
+        challengeId ? String(challengeId) : null,
+        normalizeEmail(recipientEmail),
+        String(deliveryStage || "unknown"),
+        providerMessageId ? String(providerMessageId) : null,
+        errorCode ? String(errorCode) : null,
+        errorMessage ? String(errorMessage) : null
+      );
+    },
+
+    async listDashboardOtpDeliveryEvents({ limit = 50 } = {}) {
+      return db.all(
+        `SELECT
+            otp_request_id AS otpRequestId,
+            challenge_id AS challengeId,
+            recipient_email AS recipientEmail,
+            delivery_stage AS deliveryStage,
+            provider_message_id AS providerMessageId,
+            error_code AS errorCode,
+            error_message AS errorMessage,
+            created_at AS createdAt
+         FROM dashboard_otp_delivery_events
+         ORDER BY datetime(created_at) DESC
+         LIMIT ?`,
+        Number(limit)
+      );
+    },
+
+    async getDashboardOtpDeliveryFailureSummary({ limit = 10 } = {}) {
+      return db.all(
+        `SELECT
+            COALESCE(error_code, delivery_stage) AS key,
+            COUNT(*) AS count
+         FROM dashboard_otp_delivery_events
+         WHERE delivery_stage IN ('delivery_failed', 'deferred')
+         GROUP BY COALESCE(error_code, delivery_stage)
+         ORDER BY count DESC
+         LIMIT ?`,
+        Number(limit)
+      );
+    },
+
     async createAdminSession({ adminUserId, refreshTokenHash, expiresAt, ip = null, userAgent = null }) {
       const insertResult = await db.run(
         `INSERT INTO admin_sessions (
@@ -1138,6 +1243,189 @@ async function createRepository({ dbPath }) {
       await db.run(
         `DELETE FROM dashboard_metric_snapshots
          WHERE datetime(captured_at) < datetime('now', ?)`,
+        `-${Number(retentionDays)} days`
+      );
+    },
+
+    async upsertOpsEvent({
+      source,
+      severity,
+      code,
+      title,
+      message,
+      fingerprint,
+      status = "open",
+      rawSnippet = null,
+      metadataJson = null,
+      observedAt = null,
+    }) {
+      const observedIso = observedAt || nowIso();
+      await db.run(
+        `INSERT INTO ops_events (
+          source,
+          severity,
+          code,
+          title,
+          message,
+          fingerprint,
+          first_seen_at,
+          last_seen_at,
+          seen_count,
+          status,
+          raw_snippet,
+          metadata_json
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?)
+        ON CONFLICT(fingerprint) DO UPDATE SET
+          source = excluded.source,
+          severity = excluded.severity,
+          code = excluded.code,
+          title = excluded.title,
+          message = excluded.message,
+          last_seen_at = excluded.last_seen_at,
+          seen_count = ops_events.seen_count + 1,
+          status = excluded.status,
+          raw_snippet = excluded.raw_snippet,
+          metadata_json = excluded.metadata_json`,
+        String(source || "unknown"),
+        String(severity || "info"),
+        String(code || "OPS_EVENT"),
+        String(title || "Operational event"),
+        String(message || "Operational event detected."),
+        String(fingerprint || ""),
+        observedIso,
+        observedIso,
+        String(status || "open"),
+        rawSnippet == null ? null : String(rawSnippet),
+        metadataJson == null ? null : String(metadataJson)
+      );
+
+      return db.get("SELECT * FROM ops_events WHERE fingerprint = ? LIMIT 1", String(fingerprint || ""));
+    },
+
+    async resolveOpsEventsNotInFingerprints({ source = null, activeFingerprints = [], resolvedAt = null } = {}) {
+      const resolvedIso = resolvedAt || nowIso();
+      const conditions = ["status = 'open'"];
+      const params = [];
+
+      if (source) {
+        conditions.push("source = ?");
+        params.push(String(source));
+      }
+
+      const fingerprints = Array.isArray(activeFingerprints)
+        ? activeFingerprints.map((item) => String(item || "").trim()).filter(Boolean)
+        : [];
+
+      if (fingerprints.length > 0) {
+        conditions.push(`fingerprint NOT IN (${fingerprints.map(() => "?").join(", ")})`);
+        params.push(...fingerprints);
+      }
+
+      const result = await db.run(
+        `UPDATE ops_events
+         SET status = 'resolved',
+             last_seen_at = ?
+         WHERE ${conditions.join(" AND ")}`,
+        resolvedIso,
+        ...params
+      );
+
+      return Number(result?.changes || 0);
+    },
+
+    async listOpsEvents({
+      source = null,
+      status = null,
+      severity = null,
+      sinceIso = null,
+      limit = 50,
+      offset = 0,
+    } = {}) {
+      const conditions = [];
+      const params = [];
+
+      if (source) {
+        conditions.push("source = ?");
+        params.push(String(source));
+      }
+
+      if (status) {
+        conditions.push("status = ?");
+        params.push(String(status));
+      }
+
+      if (severity) {
+        conditions.push("severity = ?");
+        params.push(String(severity));
+      }
+
+      if (sinceIso) {
+        conditions.push("datetime(last_seen_at) >= datetime(?)");
+        params.push(String(sinceIso));
+      }
+
+      const whereClause = conditions.length ? `WHERE ${conditions.join(" AND ")}` : "";
+
+      return db.all(
+        `SELECT
+            id,
+            source,
+            severity,
+            code,
+            title,
+            message,
+            fingerprint,
+            first_seen_at AS firstSeenAt,
+            last_seen_at AS lastSeenAt,
+            seen_count AS count,
+            status,
+            raw_snippet AS rawSnippet,
+            metadata_json AS metadataJson
+         FROM ops_events
+         ${whereClause}
+         ORDER BY
+           CASE severity
+             WHEN 'critical' THEN 3
+             WHEN 'warning' THEN 2
+             ELSE 1
+           END DESC,
+           datetime(last_seen_at) DESC
+         LIMIT ? OFFSET ?`,
+        ...params,
+        Number(limit),
+        Number(offset)
+      );
+    },
+
+    async getOpsSourceBreakdown({ sinceIso = null } = {}) {
+      const conditions = [];
+      const params = [];
+
+      if (sinceIso) {
+        conditions.push("datetime(last_seen_at) >= datetime(?)");
+        params.push(String(sinceIso));
+      }
+
+      const whereClause = conditions.length ? `WHERE ${conditions.join(" AND ")}` : "";
+
+      return db.all(
+        `SELECT
+            source,
+            severity,
+            status,
+            COUNT(*) AS count
+         FROM ops_events
+         ${whereClause}
+         GROUP BY source, severity, status
+         ORDER BY count DESC`,
+        ...params
+      );
+    },
+
+    async cleanupOldOpsEvents(retentionDays) {
+      await db.run(
+        `DELETE FROM ops_events
+         WHERE datetime(last_seen_at) < datetime('now', ?)`,
         `-${Number(retentionDays)} days`
       );
     },

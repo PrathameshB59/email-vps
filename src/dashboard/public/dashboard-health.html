@@ -3,6 +3,10 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta
+    name="description"
+    content="Email-VPS Health page for relay, queue, quota, host runtime signals, and recent delivery exceptions."
+  />
   <title>Email-VPS Health Console</title>
   <link rel="icon" href="/dashboard/assets/favicon.svg" type="image/svg+xml" />
   <link rel="shortcut icon" href="/dashboard/assets/favicon.svg" type="image/svg+xml" />
@@ -10,7 +14,23 @@
 </head>
 <body data-dashboard-page="health">
   <main class="shell shell-dashboard">
-    <div id="dashboardNavMount"></div>
+    <nav id="dashboardNavMount" class="console-nav-shell" aria-label="Dashboard sections">
+      <div class="console-brand">
+        <span class="console-dot"></span>
+        Email-VPS Operations Console
+      </div>
+      <div class="console-tabs">
+        <a class="console-tab" data-nav-key="overview" href="/dashboard">Overview</a>
+        <a class="console-tab" data-nav-key="activity" href="/dashboard/activity">Activity</a>
+        <a class="console-tab" data-nav-key="security" href="/dashboard/security">Security</a>
+        <a class="console-tab" data-nav-key="health" href="/dashboard/health">Health</a>
+        <a class="console-tab" data-nav-key="performance" href="/dashboard/performance">Performance</a>
+        <a class="console-tab" data-nav-key="stability" href="/dashboard/stability">Stability</a>
+        <a class="console-tab" data-nav-key="programs" href="/dashboard/programs">Programs</a>
+        <a class="console-tab" data-nav-key="operations" href="/dashboard/operations">Operations</a>
+        <a class="console-tab" data-nav-key="mail" href="/dashboard/mail">Mail</a>
+      </div>
+    </nav>
 
     <header class="page-masthead">
       <div>
@@ -29,7 +49,7 @@
     <section id="healthTimeline" class="page-grid page-grid-1"></section>
   </main>
 
-  <script src="/dashboard/assets/dashboard-nav.js"></script>
-  <script src="/dashboard/assets/dashboard-pages.js"></script>
+  <script defer src="/dashboard/assets/dashboard-nav.js"></script>
+  <script type="module" src="/dashboard/assets/dashboard-pages.js"></script>
 </body>
 </html>

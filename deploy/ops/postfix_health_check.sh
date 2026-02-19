@@ -25,8 +25,9 @@ done
 
 mkdir -p "${LOG_DIR}"
 
-TIMESTAMP=$(date -u '+%Y-%m-%d %H:%M:%S UTC')
+TIMESTAMP=$(date -u '+%Y-%m-%dT%H:%M:%SZ')
 HOSTNAME=$(hostname -f 2>/dev/null || hostname)
+FREQUENCY_UPPER=$(echo "${FREQUENCY}" | tr '[:lower:]' '[:upper:]')
 
 log() {
   echo "[${TIMESTAMP}] [${FREQUENCY}] $1" >> "${LOG_FILE}"
@@ -37,11 +38,12 @@ log "Starting Postfix health check (frequency=${FREQUENCY})..."
 
 cd "${PROJECT_DIR}"
 
+REQUEST_ID="health-${FREQUENCY}-$(date +%s)"
 if node src/cli/mail-send.js \
   --to "${RECIPIENT}" \
-  --template system-alert \
+  --template health-check \
   --category "postfix-health-check" \
-  --vars "title=Postfix Health Check (${FREQUENCY}),summary=${FREQUENCY^} scheduled delivery probe from ${HOSTNAME}.,impact=None — this is an automated health verification.,probableCause=Cron-triggered Postfix health check.,recommendedAction=No action needed if this email was received.,nextUpdateEta=Next ${FREQUENCY} check,details=Frequency: ${FREQUENCY} | Host: ${HOSTNAME} | Time: ${TIMESTAMP},severity=info,incidentId=health-${FREQUENCY}-$(date +%s),requestId=health-${FREQUENCY}-$(date +%s),service=email-vps,environment=production,dashboardUrl=https://mail.stackpilot.in/dashboard/mail,timestamp=${TIMESTAMP}" \
+  --vars "triggerType=Scheduled,frequency=${FREQUENCY},frequencyUpper=${FREQUENCY_UPPER},hostname=${HOSTNAME},triggeredBy=cron,title=Postfix Health Check (${FREQUENCY}),summary=${FREQUENCY_UPPER} scheduled delivery probe from ${HOSTNAME}.,requestId=${REQUEST_ID},service=email-vps,environment=production,dashboardUrl=https://mail.stackpilot.in/dashboard/mail,timestamp=${TIMESTAMP}" \
   >> "${LOG_FILE}" 2>&1; then
   log "OK — ${FREQUENCY} health check email sent to ${RECIPIENT}"
 else

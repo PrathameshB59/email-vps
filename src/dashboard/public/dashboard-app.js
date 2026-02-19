@@ -751,17 +751,27 @@ function bindResponsiveRerender() {
 }
 
 async function handleLoginPage() {
-  const fallbackForm = document.getElementById("loginForm");
+  const loginForm = document.getElementById("loginForm");
+  const usernameInput = document.getElementById("username");
+  const passwordInput = document.getElementById("password");
+  const credentialSection = document.getElementById("credentialSection");
+  const credentialLoginBtn = document.getElementById("credentialLoginBtn");
   const otpRequestBtn = document.getElementById("otpRequestBtn");
   const otpVerifyForm = document.getElementById("otpVerifyForm");
   const otpCodeInput = document.getElementById("otpCode");
   const otpHint = document.getElementById("otpHint");
   const otpSection = document.getElementById("otpSection");
-  const fallbackWrap = document.getElementById("credentialFallback");
   const authMeta = document.getElementById("authMeta");
-  if (!fallbackForm || !otpSection) return;
+  if (!loginForm || !otpSection || !credentialSection) return;
 
   let countdownTimer = null;
+  const authState = {
+    otpPrimaryEnabled: true,
+    requiresSecondFactor: true,
+    preAuthVerified: false,
+    localFallbackEnabled: false,
+  };
+
   const clearOtpTimer = () => {
     if (countdownTimer) {
       clearInterval(countdownTimer);
@@ -786,6 +796,17 @@ async function handleLoginPage() {
     if (otpHint) {
       otpHint.textContent = message;
     }
+  };
+
+  const setCredentialControlsEnabled = (enabled) => {
+    const state = Boolean(enabled);
+    if (usernameInput) usernameInput.disabled = !state;
+    if (passwordInput) passwordInput.disabled = !state;
+    if (credentialLoginBtn) credentialLoginBtn.disabled = !state;
+  };
+
+  const setCredentialVisibility = (visible) => {
+    credentialSection.hidden = !Boolean(visible);
   };
 
   const setOtpControlsEnabled = (enabled) => {
@@ -820,31 +841,43 @@ async function handleLoginPage() {
     }, 1000);
   };
 
-  const applyAuthConfig = (authConfig) => {
-    const otpPrimaryEnabled = Boolean(authConfig?.otpPrimaryEnabled);
-    const backupEnabled = authConfig?.credentialsFallbackEnabled !== false;
+  const applyAuthConfig = (authConfig, sessionPayload) => {
+    authState.otpPrimaryEnabled = authConfig?.otpPrimaryEnabled !== false;
+    authState.requiresSecondFactor = authConfig?.requiresSecondFactor !== false;
+    authState.preAuthVerified = Boolean(sessionPayload?.preAuthVerified || authConfig?.preAuthVerified);
+    authState.localFallbackEnabled = Boolean(authConfig?.localFallbackEnabled);
+
     const allowlistEnabled = Boolean(authConfig?.ipAllowlistEnabled);
 
-    if (!otpPrimaryEnabled) {
+    if (!authState.otpPrimaryEnabled) {
       otpSection.hidden = true;
-      setMeta("OTP login is disabled. Use backup credentials.");
-      if (fallbackWrap) {
-        fallbackWrap.setAttribute("open", "open");
-      }
-    } else {
-      otpSection.hidden = false;
-      setMeta(
-        allowlistEnabled
-          ? "OTP login is active with IP allowlist enabled."
-          : "OTP login is active. Public access is allowed; session auth still required."
-      );
+      setCredentialVisibility(true);
+      setMeta("OTP login is disabled. Credentials mode is active.");
+      return;
     }
 
-    if (fallbackWrap) {
-      fallbackWrap.hidden = !backupEnabled;
-      if (!backupEnabled) {
-        fallbackWrap.removeAttribute("open");
-      }
+    otpSection.hidden = false;
+
+    if (!authState.requiresSecondFactor) {
+      setCredentialVisibility(true);
+      setMeta(
+        allowlistEnabled
+          ? "Credential login is active with IP allowlist enabled."
+          : "Credential login is active."
+      );
+      return;
+    }
+
+    setCredentialVisibility(authState.preAuthVerified);
+    if (authState.preAuthVerified) {
+      setMeta("Step 1 complete. Continue with username and password.");
+      setOtpHint("OTP verified. Continue to credentials.");
+    } else {
+      setMeta(
+        allowlistEnabled
+          ? "Step 1 of 2: OTP verification (IP allowlist enabled)."
+          : "Step 1 of 2: verify email OTP to unlock credentials."
+      );
     }
   };
 
@@ -859,8 +892,11 @@ async function handleLoginPage() {
     // keep login page
   }
 
-  applyAuthConfig(sessionPayload?.auth);
-  setOtpHint("Request a one-time code to continue.");
+  applyAuthConfig(sessionPayload?.auth, sessionPayload);
+  if (!authState.preAuthVerified) {
+    setOtpHint("Request a one-time code to continue.");
+  }
+  setCredentialControlsEnabled(authState.preAuthVerified || !authState.requiresSecondFactor);
 
   if (otpRequestBtn) {
     otpRequestBtn.addEventListener("click", async () => {
@@ -874,8 +910,14 @@ async function handleLoginPage() {
           body: JSON.stringify({}),
         });
 
+        authState.preAuthVerified = false;
+        setCredentialVisibility(false);
+        setCredentialControlsEnabled(false);
         const recipientHint = payload?.recipient ? ` to ${payload.recipient}` : "";
-        setOtpHint(`OTP sent${recipientHint}. Code expires in ${fmt(payload.expiresInSeconds)} seconds.`);
+        const requestHint = payload?.otpRequestId ? ` Request ID: ${payload.otpRequestId}.` : "";
+        setOtpHint(
+          `OTP sent${recipientHint}. Code expires in ${fmt(payload.expiresInSeconds)} seconds.${requestHint}`
+        );
         const cooldownSeconds = Number(payload.resendAvailableInSeconds || payload.retryAfterSeconds || 0);
         if (cooldownSeconds > 0) {
           startOtpCountdown(cooldownSeconds);
@@ -893,7 +935,12 @@ async function handleLoginPage() {
         if (retryAfter) {
           startOtpCountdown(retryAfter);
         }
-        setError(error.message);
+        const requestId = error?.payload?.otpRequestId;
+        const guidance =
+          error?.payload?.error === "OTP_DELIVERY_FAILED"
+            ? " Check Spam/All Mail folders for the OTP mailbox."
+            : "";
+        setError(`${error.message}${requestId ? ` (Request ID: ${requestId})` : ""}${guidance}`);
       }
     });
   }
@@ -911,12 +958,23 @@ async function handleLoginPage() {
 
       setOtpControlsEnabled(false);
       try {
-        await fetchJson("/auth/otp/verify", {
+        const payload = await fetchJson("/auth/otp/verify", {
           method: "POST",
           body: JSON.stringify({ code }),
         });
         clearOtpTimer();
-        window.location.href = "/dashboard";
+        authState.preAuthVerified = true;
+        setCredentialVisibility(true);
+        setCredentialControlsEnabled(true);
+        setMeta("Step 1 complete. Enter credentials to finish sign-in.");
+        setOtpHint(
+          payload?.expiresAt
+            ? `OTP verified. Credentials step unlocked until ${formatTime(payload.expiresAt)}.`
+            : "OTP verified. Continue with credentials."
+        );
+        if (usernameInput) {
+          usernameInput.focus();
+        }
       } catch (error) {
         setOtpControlsEnabled(true);
         setError(error.message);
@@ -924,14 +982,20 @@ async function handleLoginPage() {
     });
   }
 
-  fallbackForm.addEventListener("submit", async (event) => {
+  loginForm.addEventListener("submit", async (event) => {
     event.preventDefault();
     setError("");
 
-    const formData = new FormData(fallbackForm);
+    if (authState.requiresSecondFactor && !authState.preAuthVerified) {
+      setError("Complete OTP verification before entering credentials.");
+      return;
+    }
+
+    const formData = new FormData(loginForm);
     const username = String(formData.get("username") || "").trim();
     const password = String(formData.get("password") || "");
 
+    setCredentialControlsEnabled(false);
     try {
       await fetchJson("/auth/login", {
         method: "POST",
@@ -939,7 +1003,12 @@ async function handleLoginPage() {
       });
       window.location.href = "/dashboard";
     } catch (error) {
-      setError(error.message);
+      const fallbackMessage =
+        error?.payload?.error === "OTP_REQUIRED"
+          ? "OTP verification is required before credential sign-in."
+          : error.message;
+      setError(fallbackMessage);
+      setCredentialControlsEnabled(true);
     }
   });
 }

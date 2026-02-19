@@ -11,8 +11,10 @@ const { createDashboardSnapshotWorker } = require("./dashboard/snapshotWorker");
 const { createProgramCheckerService } = require("./dashboard/services/programCheckerService");
 const { createMailCheckerService } = require("./dashboard/services/mailCheckerService");
 const { createActivityCheckerService } = require("./dashboard/services/activityCheckerService");
+const { createOpsInsightService } = require("./dashboard/services/opsInsightService");
 const { createOtpAuthService } = require("./dashboard/services/otpAuthService");
 const { createHealthCheckService } = require("./dashboard/services/healthCheckService");
+const { createOpsInsightWorker } = require("./dashboard/opsInsightWorker");
 
 async function createCore({ envOverrides = {}, transport = null, logger = console } = {}) {
   const env = loadEnv(envOverrides);
@@ -45,21 +47,32 @@ async function createCore({ envOverrides = {}, transport = null, logger = consol
     verifyRelay: async () => verifyMailTransport(mailTransport),
   });
 
+  const opsInsightService = createOpsInsightService({
+    env,
+    repository,
+    mailService,
+    alertService: dashboardAlertService,
+    logger,
+  });
+
   const dashboardService = createDashboardService({
     repository,
     env,
     alertService: dashboardAlertService,
+    opsInsightService,
   });
 
   const programCheckerService = createProgramCheckerService({
     env,
     repository,
+    opsInsightService,
   });
 
   const mailCheckerService = createMailCheckerService({
     env,
     repository,
     mailService,
+    opsInsightService,
   });
 
   const activityCheckerService = createActivityCheckerService({
@@ -85,7 +98,14 @@ async function createCore({ envOverrides = {}, transport = null, logger = consol
     logger,
   });
 
+  const opsInsightWorker = createOpsInsightWorker({
+    opsInsightService,
+    pollMs: env.DASHBOARD_OPS_COLLECT_INTERVAL_SECONDS * 1000,
+    logger,
+  });
+
   async function close() {
+    await opsInsightWorker.stop();
     await dashboardSnapshotWorker.stop();
     await retryQueue.stop();
     if (mailTransport && typeof mailTransport.close === "function") {
@@ -101,12 +121,14 @@ async function createCore({ envOverrides = {}, transport = null, logger = consol
     mailService,
     retryQueue,
     dashboardService,
+    opsInsightService,
     programCheckerService,
     mailCheckerService,
     activityCheckerService,
     otpAuthService,
     healthCheckService,
     dashboardSnapshotWorker,
+    opsInsightWorker,
     close,
   };
 }
@@ -119,6 +141,7 @@ async function createRuntime(options = {}) {
     rateLimiter: core.rateLimiter,
     repository: core.repository,
     dashboardService: core.dashboardService,
+    opsInsightService: core.opsInsightService,
     programCheckerService: core.programCheckerService,
     mailCheckerService: core.mailCheckerService,
     activityCheckerService: core.activityCheckerService,

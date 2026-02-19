@@ -1,7 +1,5 @@
 const os = require("os");
 
-const HEALTH_CHECK_CATEGORIES = ["health-check", "postfix-health-check"];
-
 const SCHEDULE = [
   { frequency: "daily", cron: "0 8 * * *", description: "Every day at 08:00 UTC" },
   { frequency: "weekly", cron: "0 9 * * 1", description: "Every Monday at 09:00 UTC" },
@@ -66,22 +64,21 @@ function createHealthCheckService({ env, mailService, repository }) {
     const triggerTimestamp = new Date().toISOString();
     const hostname = os.hostname();
 
+    const requestId = `health-manual-${Date.now()}`;
     const result = await mailService.sendTemplate(
       {
         to: recipient,
-        template: "system-alert",
+        template: "health-check",
         category: "health-check",
         variables: {
+          triggerType: "Manual",
+          frequency: "manual",
+          frequencyUpper: "MANUAL",
+          hostname,
+          triggeredBy: `${dashboardUser || "dashboard-user"} (${requestedByIp || "unknown"})`,
           title: "Manual Health Check",
           summary: `Manual health check triggered from dashboard on ${hostname}.`,
-          impact: "None — this is an operator-initiated delivery verification.",
-          probableCause: "Dashboard manual health check.",
-          recommendedAction: "Confirm receipt to verify end-to-end delivery.",
-          nextUpdateEta: "On next scheduled check",
-          details: `Triggered by ${dashboardUser || "dashboard-user"} from ${requestedByIp || "unknown-ip"} at ${triggerTimestamp}.`,
-          severity: "info",
-          incidentId: `health-manual-${Date.now()}`,
-          requestId: `health-manual-${Date.now()}`,
+          requestId,
           service: "email-vps",
           environment: env.NODE_ENV || "production",
           dashboardUrl: "https://mail.stackpilot.in/dashboard/mail",

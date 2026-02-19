@@ -22,7 +22,16 @@ class MailProbeError extends Error {
   }
 }
 
-function createMailCheckerService({ env, repository, mailService }) {
+function createMailCheckerService({
+  env,
+  repository,
+  mailService,
+  opsInsightService = {
+    async getMailDiagnostics() {
+      return null;
+    },
+  },
+}) {
   let lastProbeAtMs = 0;
 
   async function getLastSuccessfulDelivery() {
@@ -44,7 +53,16 @@ function createMailCheckerService({ env, repository, mailService }) {
 
   async function getMailCheck() {
     const sinceIso = isoHoursAgo(24);
-    const [health, sent24h, failed24h, retrying24h, topErrors, recentEvents, lastSuccessAt] = await Promise.all([
+    const [
+      health,
+      sent24h,
+      failed24h,
+      retrying24h,
+      topErrors,
+      recentEvents,
+      lastSuccessAt,
+      opsDiagnostics,
+    ] = await Promise.all([
       mailService.getHealthSnapshot(),
       repository.countMailEventsByStatusSince({ status: "sent", sinceIso }),
       repository.countMailEventsByStatusSince({ status: "failed", sinceIso }),
@@ -52,6 +70,7 @@ function createMailCheckerService({ env, repository, mailService }) {
       repository.getTopErrorCodes(sinceIso, 6),
       repository.listRecentEvents(30),
       getLastSuccessfulDelivery(),
+      opsInsightService.getMailDiagnostics().catch(() => null),
     ]);
 
     const total24h = Number(sent24h || 0) + Number(failed24h || 0) + Number(retrying24h || 0);
@@ -99,6 +118,28 @@ function createMailCheckerService({ env, repository, mailService }) {
         nextAllowedAt: nextAllowedMs ? new Date(nextAllowedMs).toISOString() : null,
         remainingCooldownSeconds,
       },
+      postfixConfigHealth: opsDiagnostics?.postfixConfigHealth || {
+        health: "unknown",
+        duplicateCount: 0,
+        warningCount: 0,
+        issues: [],
+      },
+      cronNoiseHealth: opsDiagnostics?.cronNoiseHealth || {
+        health: "unknown",
+        staleReferences: 0,
+        expectedReferences: 0,
+        schedulerState: "unknown",
+      },
+      logwatchSummary: opsDiagnostics?.logwatchSummary || {
+        health: "unknown",
+        source: null,
+        warningCount: 0,
+        bySource: {},
+      },
+      postfixWarningCounts: opsDiagnostics?.postfixWarningCounts || {
+        total: 0,
+        byCode: {},
+      },
     };
   }
 
@@ -128,11 +169,13 @@ function createMailCheckerService({ env, repository, mailService }) {
 
     const incidentId = `probe-${Date.now()}`;
     const triggerTimestamp = new Date().toISOString();
+    const healthSnapshot = await mailService.getHealthSnapshot();
+    const queueSnapshot = healthSnapshot?.queue || {};
 
     const result = await mailService.sendTemplate(
       {
         to: probeRecipient,
-        template: "system-alert",
+        template: "delivery-probe",
         category: "mail-probe",
         variables: {
           title: "Manual Delivery Probe",
@@ -148,6 +191,15 @@ function createMailCheckerService({ env, repository, mailService }) {
           service: "email-vps",
           environment: env.NODE_ENV || "production",
           dashboardUrl: "https://mail.stackpilot.in/dashboard/mail",
+          runbookUrl: "https://mail.stackpilot.in/dashboard/operations",
+          triggerSource: "dashboard-manual-probe",
+          triggeredBy: `${dashboardUser || "dashboard-user"} (${requestedByIp || "unknown-ip"})`,
+          probeRecipient,
+          queuePending: String(queueSnapshot.pending ?? 0),
+          queueRetrying: String(queueSnapshot.retrying ?? 0),
+          queueFailed: String(queueSnapshot.failed ?? 0),
+          relayHost: String(env.MAIL_RELAY_HOST || "127.0.0.1"),
+          relayPort: String(env.MAIL_RELAY_PORT || 25),
           timestamp: triggerTimestamp,
         },
       },

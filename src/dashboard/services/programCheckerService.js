@@ -163,7 +163,15 @@ function summarizeOverall(components) {
   };
 }
 
-function createProgramCheckerService({ env, repository }) {
+function createProgramCheckerService({
+  env,
+  repository,
+  opsInsightService = {
+    async getProgramDiagnostics() {
+      return null;
+    },
+  },
+}) {
   async function getSystemdServices() {
     const checks = SYSTEMD_UNITS.map((item) => {
       const result = safeExec("systemctl", ["is-active", item.unit]);
@@ -416,13 +424,24 @@ function createProgramCheckerService({ env, repository }) {
   }
 
   async function getProgramsSnapshot() {
-    const [systemd, pm2, docker, listeners, freshness] = await Promise.all([
+    const [systemd, pm2, docker, listeners, freshness, opsDiagnostics] = await Promise.all([
       getSystemdServices(),
       getPm2Status(),
       getDockerStatus(),
       getListenerStatus(),
       getMetricsAndWorkerStatus(),
+      opsInsightService.getProgramDiagnostics().catch(() => null),
     ]);
+
+    const cronSchedulerStatus = opsDiagnostics?.cronSchedulerStatus || null;
+    const cronMetricsJobStatus = opsDiagnostics?.cronMetricsJobStatus || null;
+    const postfixConfigWarnings = Array.isArray(opsDiagnostics?.postfixConfigWarnings)
+      ? opsDiagnostics.postfixConfigWarnings
+      : [];
+
+    const cronHealth = cronSchedulerStatus?.health || "unknown";
+    const cronMetricsHealth = cronMetricsJobStatus?.health || "unknown";
+    const postfixWarningsHealth = postfixConfigWarnings.length > 0 ? "warning" : "healthy";
 
     const overall = summarizeOverall([
       { component: "systemd", health: systemd.health, message: "System service checks require attention." },
@@ -435,6 +454,24 @@ function createProgramCheckerService({ env, repository }) {
         health: freshness.snapshotWorker.health,
         message: freshness.snapshotWorker.message,
       },
+      {
+        component: "cron-scheduler",
+        health: cronHealth,
+        message: cronSchedulerStatus?.message || "Cron scheduler diagnostics unavailable.",
+      },
+      {
+        component: "cron-metrics-job",
+        health: cronMetricsHealth,
+        message: cronMetricsJobStatus?.message || "Cron metrics job diagnostics unavailable.",
+      },
+      {
+        component: "postfix-config",
+        health: postfixWarningsHealth,
+        message:
+          postfixConfigWarnings.length > 0
+            ? `Postfix config warning count: ${postfixConfigWarnings.length}.`
+            : "No postfix config warnings.",
+      },
     ]);
 
     return {
@@ -445,6 +482,9 @@ function createProgramCheckerService({ env, repository }) {
       listeners,
       metrics: freshness.metrics,
       snapshotWorker: freshness.snapshotWorker,
+      cronSchedulerStatus,
+      cronMetricsJobStatus,
+      postfixConfigWarnings,
       overall,
     };
   }

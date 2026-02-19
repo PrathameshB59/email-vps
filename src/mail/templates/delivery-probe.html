@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Email-VPS Delivery Probe</title>
+</head>
+<body style="margin:0;padding:0;background:#071426;font-family:'Segoe UI',Tahoma,Geneva,Verdana,sans-serif;color:#e8f3ff;">
+  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="padding:24px 10px;">
+    <tr>
+      <td align="center">
+        <table role="presentation" width="680" cellspacing="0" cellpadding="0" style="max-width:680px;background:#0a1b31;border:1px solid #214061;border-radius:16px;overflow:hidden;">
+          <tr>
+            <td style="padding:18px 22px;background:linear-gradient(90deg,#2c6af7,#38a7ff);color:#ffffff;">
+              <table role="presentation" width="100%" cellspacing="0" cellpadding="0">
+                <tr>
+                  <td style="font-size:24px;font-weight:700;line-height:1.2;">Email-VPS Delivery Probe</td>
+                  <td align="right">
+                    <span style="display:inline-block;border:1px solid rgba(255,255,255,0.45);padding:4px 10px;border-radius:999px;font-size:12px;font-weight:700;letter-spacing:0.06em;">{{severityUpper}}</span>
+                  </td>
+                </tr>
+              </table>
+              <p style="margin:10px 0 0;font-size:13px;opacity:0.95;">Incident ID: <strong>{{incidentId}}</strong> | Trigger: <strong>{{triggerSource}}</strong></p>
+            </td>
+          </tr>
+
+          <tr>
+            <td style="padding:18px 22px 0;">
+              <h1 style="margin:0 0 6px;font-size:24px;line-height:1.25;color:#f5f9ff;">{{title}}</h1>
+              <p style="margin:0 0 14px;color:#a8bfd8;font-size:15px;line-height:1.5;">{{summary}}</p>
+            </td>
+          </tr>
+
+          <tr>
+            <td style="padding:0 22px 16px;">
+              <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#062014;border:1px solid #1f7f5c;border-radius:12px;">
+                <tr>
+                  <td style="padding:16px;">
+                    <p style="margin:0 0 6px;font-size:20px;font-weight:700;color:#57e3b5;">Delivery Path Verified</p>
+                    <p style="margin:0;font-size:14px;color:#bbf7e7;line-height:1.45;">If you received this email, queue, relay, and provider delivery path is currently working.</p>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+
+          <tr>
+            <td style="padding:0 22px 18px;">
+              <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="border-collapse:separate;border-spacing:0 10px;">
+                <tr>
+                  <td style="background:#0d2845;border:1px solid #2a4a6e;border-radius:12px;padding:14px;">
+                    <p style="margin:0 0 6px;font-size:12px;letter-spacing:0.08em;text-transform:uppercase;color:#84bfff;">What happened</p>
+                    <p style="margin:0;font-size:15px;line-height:1.45;color:#dbe9f8;">{{summary}}</p>
+                  </td>
+                </tr>
+                <tr>
+                  <td style="background:#0d2845;border:1px solid #2a4a6e;border-radius:12px;padding:14px;">
+                    <p style="margin:0 0 6px;font-size:12px;letter-spacing:0.08em;text-transform:uppercase;color:#84bfff;">Impact</p>
+                    <p style="margin:0;font-size:15px;line-height:1.45;color:#dbe9f8;">{{impact}}</p>
+                  </td>
+                </tr>
+                <tr>
+                  <td style="background:#102a46;border:1px solid #37567b;border-radius:12px;padding:14px;">
+                    <p style="margin:0 0 8px;font-size:12px;letter-spacing:0.08em;text-transform:uppercase;color:#9fd0ff;">Probe diagnostics</p>
+                    <table role="presentation" width="100%" cellspacing="0" cellpadding="0">
+                      <tr>
+                        <td style="padding:4px 0;width:180px;color:#84bfff;font-size:13px;vertical-align:top;">Triggered by</td>
+                        <td style="padding:4px 0;color:#dbe9f8;font-size:13px;font-weight:600;vertical-align:top;">{{triggeredBy}}</td>
+                      </tr>
+                      <tr>
+                        <td style="padding:4px 0;color:#84bfff;font-size:13px;vertical-align:top;">Probe recipient</td>
+                        <td style="padding:4px 0;color:#dbe9f8;font-size:13px;font-weight:600;vertical-align:top;">{{probeRecipient}}</td>
+                      </tr>
+                      <tr>
+                        <td style="padding:4px 0;color:#84bfff;font-size:13px;vertical-align:top;">Queue state</td>
+                        <td style="padding:4px 0;color:#dbe9f8;font-size:13px;font-weight:600;vertical-align:top;">Pending {{queuePending}} | Retrying {{queueRetrying}} | Failed {{queueFailed}}</td>
+                      </tr>
+                      <tr>
+                        <td style="padding:4px 0;color:#84bfff;font-size:13px;vertical-align:top;">Relay endpoint</td>
+                        <td style="padding:4px 0;color:#dbe9f8;font-size:13px;font-weight:600;vertical-align:top;">{{relayHost}}:{{relayPort}}</td>
+                      </tr>
+                    </table>
+                  </td>
+                </tr>
+                <tr>
+                  <td style="background:#08192e;border:1px solid #2a4a6e;border-radius:12px;padding:14px;white-space:pre-wrap;font-family:'Courier New',Courier,monospace;color:#d8e8f8;line-height:1.4;">
+                    {{details}}
+                  </td>
+                </tr>
+                <tr>
+                  <td style="background:#112e4f;border:1px solid #3d628a;border-radius:12px;padding:14px;">
+                    <p style="margin:0 0 8px;font-size:12px;letter-spacing:0.08em;text-transform:uppercase;color:#9fd0ff;">Recommended action</p>
+                    <ol style="margin:0;padding-left:20px;color:#edf5ff;">
+                      <li style="margin-bottom:6px;line-height:1.45;">{{recommendedAction}}</li>
+                      <li style="line-height:1.45;">Validate dashboard health panel and alert stream immediately.</li>
+                    </ol>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+
+          <tr>
+            <td style="padding:0 22px 22px;">
+              <table role="presentation" cellspacing="0" cellpadding="0">
+                <tr>
+                  <td style="padding-right:10px;">
+                    <a href="{{dashboardUrl}}" style="display:inline-block;padding:11px 16px;border-radius:10px;background:#2e78ff;color:#ffffff;text-decoration:none;font-weight:700;">Open Dashboard</a>
+                  </td>
+                  <td>
+                    <a href="{{runbookUrl}}" style="display:inline-block;padding:11px 16px;border-radius:10px;background:#123d66;color:#d9e9ff;text-decoration:none;font-weight:700;border:1px solid #2d5f8f;">Open Runbook</a>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+
+          <tr>
+            <td style="padding:14px 22px 20px;border-top:1px solid #203e5f;color:#9eb9d4;font-size:12px;line-height:1.5;">
+              <strong>Metadata</strong><br />
+              Service: {{service}} | Environment: {{environment}} | Timestamp: {{timestamp}} | Request ID: {{requestId}}
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>

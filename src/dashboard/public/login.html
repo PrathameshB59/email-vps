@@ -3,6 +3,10 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta
+    name="description"
+    content="Email-VPS secure login requiring OTP verification followed by credentials for dashboard access."
+  />
   <title>Email-VPS Login</title>
   <link rel="icon" href="/dashboard/assets/favicon.svg" type="image/svg+xml" />
   <link rel="shortcut icon" href="/dashboard/assets/favicon.svg" type="image/svg+xml" />
@@ -12,7 +16,7 @@
   <main class="auth-shell">
     <section class="auth-card">
       <h1>Email-VPS Control Plane</h1>
-      <p>Primary sign-in uses one-time email verification. Credentials remain available as backup.</p>
+      <p>Sign in requires two steps: email OTP verification, then account credentials.</p>
 
       <section class="auth-section auth-section-primary" id="otpSection">
         <div class="auth-section-head">
@@ -35,12 +39,16 @@
             autocomplete="one-time-code"
             required
           />
-          <button id="otpVerifyBtn" type="submit">Verify and Sign In</button>
+          <button id="otpVerifyBtn" type="submit">Verify OTP</button>
         </form>
       </section>
 
-      <details class="auth-fallback" id="credentialFallback">
-        <summary>Use backup credentials</summary>
+      <section class="auth-section auth-section-secondary" id="credentialSection" hidden>
+        <div class="auth-section-head">
+          <h2>Step 2: Account Credentials</h2>
+          <span class="badge warning">2FA</span>
+        </div>
+        <p class="auth-hint">Enter your account username and password to complete sign-in.</p>
         <form id="loginForm">
           <label for="username">Username</label>
           <input id="username" name="username" autocomplete="username" required />
@@ -48,15 +56,15 @@
           <label for="password">Password</label>
           <input id="password" name="password" type="password" autocomplete="current-password" required />
 
-          <button type="submit">Sign in with credentials</button>
+          <button id="credentialLoginBtn" type="submit">Sign In to Dashboard</button>
         </form>
-      </details>
+      </section>
 
       <p class="error" id="errorMessage"></p>
       <p class="auth-meta" id="authMeta"></p>
     </section>
   </main>
 
-  <script src="/dashboard/assets/dashboard-app.js"></script>
+  <script defer src="/dashboard/assets/dashboard-app.js"></script>
 </body>
 </html>

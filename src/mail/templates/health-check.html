@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Email-VPS Health Check</title>
+</head>
+<body style="margin:0;padding:0;background:#071426;font-family:'Segoe UI',Tahoma,Geneva,Verdana,sans-serif;color:#e8f3ff;">
+  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="padding:24px 10px;">
+    <tr>
+      <td align="center">
+        <table role="presentation" width="680" cellspacing="0" cellpadding="0" style="max-width:680px;background:#0a1b31;border:1px solid #1a4a2e;border-radius:16px;overflow:hidden;">
+
+          <!-- ── Header ── -->
+          <tr>
+            <td style="padding:18px 22px;background:linear-gradient(90deg,#059669,#10b981);color:#ffffff;">
+              <table role="presentation" width="100%" cellspacing="0" cellpadding="0">
+                <tr>
+                  <td style="font-size:24px;font-weight:700;line-height:1.2;">Email-VPS Health Check</td>
+                  <td align="right">
+                    <span style="display:inline-block;border:1px solid rgba(255,255,255,0.5);padding:4px 12px;border-radius:999px;font-size:11px;font-weight:700;letter-spacing:0.1em;text-transform:uppercase;">{{triggerType}}</span>
+                  </td>
+                </tr>
+              </table>
+              <p style="margin:10px 0 0;font-size:13px;opacity:0.9;">Frequency: <strong>{{frequencyUpper}}</strong> &nbsp;|&nbsp; Host: <strong>{{hostname}}</strong></p>
+            </td>
+          </tr>
+
+          <!-- ── Delivery Verified Callout ── -->
+          <tr>
+            <td style="padding:22px 22px 0;">
+              <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#071f12;border:2px solid #059669;border-radius:12px;overflow:hidden;">
+                <tr>
+                  <td style="padding:20px 22px;">
+                    <table role="presentation" width="100%" cellspacing="0" cellpadding="0">
+                      <tr>
+                        <td style="width:48px;vertical-align:middle;">
+                          <div style="width:40px;height:40px;background:#059669;border-radius:50%;text-align:center;line-height:40px;font-size:22px;font-weight:700;color:#ffffff;">✓</div>
+                        </td>
+                        <td style="padding-left:14px;vertical-align:middle;">
+                          <p style="margin:0 0 4px;font-size:20px;font-weight:700;color:#34d399;line-height:1.2;">Delivery Verified</p>
+                          <p style="margin:0;font-size:14px;color:#6ee7b7;line-height:1.45;">If you received this email, end-to-end mail delivery from your VPS is working correctly.</p>
+                        </td>
+                      </tr>
+                    </table>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+
+          <!-- ── Details Card ── -->
+          <tr>
+            <td style="padding:16px 22px 0;">
+              <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#0d2845;border:1px solid #2a4a6e;border-radius:12px;">
+                <tr>
+                  <td style="padding:14px 18px 6px;">
+                    <p style="margin:0 0 10px;font-size:11px;letter-spacing:0.1em;text-transform:uppercase;color:#6ee7b7;font-weight:600;">Check Details</p>
+                  </td>
+                </tr>
+                <tr>
+                  <td style="padding:0 18px 14px;">
+                    <table role="presentation" width="100%" cellspacing="0" cellpadding="0">
+                      <tr>
+                        <td style="padding:5px 0;width:140px;color:#84bfff;font-size:13px;vertical-align:top;">Trigger type</td>
+                        <td style="padding:5px 0;color:#dbe9f8;font-size:13px;font-weight:600;vertical-align:top;">{{triggerType}}</td>
+                      </tr>
+                      <tr>
+                        <td style="padding:5px 0;color:#84bfff;font-size:13px;vertical-align:top;">Frequency</td>
+                        <td style="padding:5px 0;color:#dbe9f8;font-size:13px;font-weight:600;vertical-align:top;">{{frequencyUpper}}</td>
+                      </tr>
+                      <tr>
+                        <td style="padding:5px 0;color:#84bfff;font-size:13px;vertical-align:top;">Host</td>
+                        <td style="padding:5px 0;color:#dbe9f8;font-size:13px;font-weight:600;vertical-align:top;">{{hostname}}</td>
+                      </tr>
+                      <tr>
+                        <td style="padding:5px 0;color:#84bfff;font-size:13px;vertical-align:top;">Triggered by</td>
+                        <td style="padding:5px 0;color:#dbe9f8;font-size:13px;font-weight:600;vertical-align:top;">{{triggeredBy}}</td>
+                      </tr>
+                      <tr>
+                        <td style="padding:5px 0;color:#84bfff;font-size:13px;vertical-align:top;">Sent at</td>
+                        <td style="padding:5px 0;color:#dbe9f8;font-size:13px;font-weight:600;vertical-align:top;">{{timestamp}}</td>
+                      </tr>
+                      <tr>
+                        <td style="padding:5px 0;color:#84bfff;font-size:13px;vertical-align:top;">Summary</td>
+                        <td style="padding:5px 0;color:#dbe9f8;font-size:13px;vertical-align:top;">{{summary}}</td>
+                      </tr>
+                    </table>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+
+          <!-- ── Cron Schedule Table ── -->
+          <tr>
+            <td style="padding:16px 22px 0;">
+              <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#071f12;border:1px solid #1a4a2e;border-radius:12px;overflow:hidden;">
+                <tr>
+                  <td style="padding:14px 18px 0;">
+                    <p style="margin:0 0 10px;font-size:11px;letter-spacing:0.1em;text-transform:uppercase;color:#6ee7b7;font-weight:600;">Automatic Schedule</p>
+                  </td>
+                </tr>
+                <tr>
+                  <td style="padding:0 18px 14px;">
+                    <table role="presentation" width="100%" cellspacing="0" cellpadding="0">
+                      <!-- Header row -->
+                      <tr>
+                        <td style="padding:6px 8px 6px 0;font-size:11px;font-weight:700;letter-spacing:0.06em;text-transform:uppercase;color:#6ee7b7;border-bottom:1px solid #1a4a2e;">Frequency</td>
+                        <td style="padding:6px 8px;font-size:11px;font-weight:700;letter-spacing:0.06em;text-transform:uppercase;color:#6ee7b7;border-bottom:1px solid #1a4a2e;font-family:'Courier New',monospace;">Cron</td>
+                        <td style="padding:6px 0 6px 8px;font-size:11px;font-weight:700;letter-spacing:0.06em;text-transform:uppercase;color:#6ee7b7;border-bottom:1px solid #1a4a2e;">Schedule (UTC)</td>
+                      </tr>
+                      <!-- Daily -->
+                      <tr>
+                        <td style="padding:7px 8px 7px 0;font-size:13px;color:#dbe9f8;border-bottom:1px solid #0f2d1a;">Daily</td>
+                        <td style="padding:7px 8px;font-size:12px;color:#86efac;font-family:'Courier New',monospace;border-bottom:1px solid #0f2d1a;">0 8 * * *</td>
+                        <td style="padding:7px 0 7px 8px;font-size:13px;color:#a7f3d0;border-bottom:1px solid #0f2d1a;">Every day at 08:00</td>
+                      </tr>
+                      <!-- Weekly -->
+                      <tr>
+                        <td style="padding:7px 8px 7px 0;font-size:13px;color:#dbe9f8;border-bottom:1px solid #0f2d1a;">Weekly</td>
+                        <td style="padding:7px 8px;font-size:12px;color:#86efac;font-family:'Courier New',monospace;border-bottom:1px solid #0f2d1a;">0 9 * * 1</td>
+                        <td style="padding:7px 0 7px 8px;font-size:13px;color:#a7f3d0;border-bottom:1px solid #0f2d1a;">Every Monday at 09:00</td>
+                      </tr>
+                      <!-- Monthly -->
+                      <tr>
+                        <td style="padding:7px 8px 7px 0;font-size:13px;color:#dbe9f8;border-bottom:1px solid #0f2d1a;">Monthly</td>
+                        <td style="padding:7px 8px;font-size:12px;color:#86efac;font-family:'Courier New',monospace;border-bottom:1px solid #0f2d1a;">0 10 1 * *</td>
+                        <td style="padding:7px 0 7px 8px;font-size:13px;color:#a7f3d0;border-bottom:1px solid #0f2d1a;">1st of month at 10:00</td>
+                      </tr>
+                      <!-- Yearly -->
+                      <tr>
+                        <td style="padding:7px 8px 7px 0;font-size:13px;color:#dbe9f8;">Yearly</td>
+                        <td style="padding:7px 8px;font-size:12px;color:#86efac;font-family:'Courier New',monospace;">0 11 1 1 *</td>
+                        <td style="padding:7px 0 7px 8px;font-size:13px;color:#a7f3d0;">Jan 1st at 11:00</td>
+                      </tr>
+                    </table>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+
+          <!-- ── CTA Button ── -->
+          <tr>
+            <td style="padding:20px 22px 4px;">
+              <a href="{{dashboardUrl}}" style="display:inline-block;padding:12px 20px;border-radius:10px;background:#059669;color:#ffffff;text-decoration:none;font-weight:700;font-size:14px;">Open Mail Dashboard</a>
+            </td>
+          </tr>
+
+          <!-- ── Footer Metadata ── -->
+          <tr>
+            <td style="padding:14px 22px 20px;border-top:1px solid #1a4a2e;color:#6b9e80;font-size:12px;line-height:1.6;margin-top:16px;">
+              <strong style="color:#86efac;">Metadata</strong><br />
+              Service: {{service}} &nbsp;|&nbsp; Environment: {{environment}} &nbsp;|&nbsp; Timestamp: {{timestamp}}<br />
+              Request ID: {{requestId}}
+            </td>
+          </tr>
+
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>

@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta
+    name="description"
+    content="Email-VPS AIDE control page with baseline integrity status, checks timeline, and remediation hints."
+  />
+  <title>Email-VPS AIDE Control</title>
+  <link rel="icon" href="/dashboard/assets/favicon.svg" type="image/svg+xml" />
+  <link rel="shortcut icon" href="/dashboard/assets/favicon.svg" type="image/svg+xml" />
+  <link rel="stylesheet" href="/dashboard/assets/dashboard.css" />
+</head>
+<body data-dashboard-page="operations-aide">
+  <main class="shell shell-dashboard">
+    <nav id="dashboardNavMount" class="console-nav-shell" aria-label="Dashboard sections">
+      <div class="console-brand">
+        <span class="console-dot"></span>
+        Email-VPS Operations Console
+      </div>
+      <div class="console-tabs">
+        <a class="console-tab" data-nav-key="overview" href="/dashboard">Overview</a>
+        <a class="console-tab" data-nav-key="activity" href="/dashboard/activity">Activity</a>
+        <a class="console-tab" data-nav-key="security" href="/dashboard/security">Security</a>
+        <a class="console-tab" data-nav-key="health" href="/dashboard/health">Health</a>
+        <a class="console-tab" data-nav-key="performance" href="/dashboard/performance">Performance</a>
+        <a class="console-tab" data-nav-key="stability" href="/dashboard/stability">Stability</a>
+        <a class="console-tab" data-nav-key="programs" href="/dashboard/programs">Programs</a>
+        <a class="console-tab" data-nav-key="operations" href="/dashboard/operations">Operations</a>
+        <a class="console-tab" data-nav-key="mail" href="/dashboard/mail">Mail</a>
+      </div>
+    </nav>
+
+    <header class="page-masthead">
+      <div>
+        <p class="eyebrow">Operations Control</p>
+        <h1>AIDE Integrity and Baseline</h1>
+        <p id="pageSubline" class="subline">Loading AIDE baseline and integrity diagnostics...</p>
+      </div>
+      <div class="control-row">
+        <select id="controlWindow" aria-label="Control window">
+          <option value="24h">Last 24h</option>
+          <option value="7d">Last 7d</option>
+          <option value="30d">Last 30d</option>
+        </select>
+        <button id="refreshBtn" type="button">Refresh</button>
+        <button id="opsRecheckBtn" type="button">Recheck</button>
+        <button id="logoutBtn" type="button" class="danger">Logout</button>
+      </div>
+    </header>
+
+    <nav class="ops-subnav" aria-label="Operations controls">
+      <a class="ops-subnav-chip" data-ops-target="all" href="/dashboard/operations">All</a>
+      <a class="ops-subnav-chip" data-ops-target="aide" href="/dashboard/operations/aide">AIDE</a>
+      <a class="ops-subnav-chip" data-ops-target="fail2ban" href="/dashboard/operations/fail2ban">Fail2Ban</a>
+      <a class="ops-subnav-chip" data-ops-target="relay" href="/dashboard/operations/relay">Relay</a>
+      <a class="ops-subnav-chip" data-ops-target="postfix" href="/dashboard/operations/postfix">Postfix</a>
+      <a class="ops-subnav-chip" data-ops-target="crontab" href="/dashboard/operations/crontab">Crontab</a>
+    </nav>
+
+    <section class="ops-filter-row">
+      <div class="control-row">
+        <select id="controlStatusFilter" aria-label="Filter timeline status">
+          <option value="">All status</option>
+          <option value="open">Open</option>
+          <option value="resolved">Resolved</option>
+        </select>
+        <select id="controlSeverityFilter" aria-label="Filter timeline severity">
+          <option value="">All severity</option>
+          <option value="critical">Critical</option>
+          <option value="warning">Warning</option>
+          <option value="info">Info</option>
+        </select>
+        <button id="controlFilterResetBtn" type="button">Reset Filters</button>
+      </div>
+      <p class="meta">AIDE timeline view supports status/severity filters within selected window.</p>
+    </section>
+
+    <section id="controlSummary" class="page-grid page-grid-4"></section>
+    <section id="controlStatus" class="page-grid page-grid-1"></section>
+    <section id="controlTimeline" class="page-grid page-grid-1"></section>
+    <section id="controlHints" class="page-grid page-grid-1"></section>
+  </main>
+
+  <script defer src="/dashboard/assets/dashboard-nav.js"></script>
+  <script type="module" src="/dashboard/assets/dashboard-pages.js"></script>
+</body>
+</html>

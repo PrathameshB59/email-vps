@@ -9,17 +9,24 @@
    - `DASHBOARD_LOGIN_PASS`
    - `DASHBOARD_SESSION_SECRET`
    - `DASHBOARD_OTP_TO`
+   - `DASHBOARD_AUTH_FLOW=otp_then_credentials`
    - `DASHBOARD_MAIL_PROBE_TO`
-3. Public OTP-first mode defaults:
-   - `DASHBOARD_IP_ALLOWLIST_ENABLED=false`
+3. OTP delivery reliability defaults:
+   - `DASHBOARD_OTP_TO` should be a mailbox separate from sender account.
+   - `DASHBOARD_OTP_FROM` can override sender for auth emails.
+   - `DASHBOARD_OTP_DIAGNOSTICS_ENABLED=true`
+4. Public 2-step mode defaults:
    - `DASHBOARD_OTP_PRIMARY_ENABLED=true`
-4. Optional strict allowlist:
+   - credentials step is unlocked only after OTP verification.
+5. Local break-glass:
+   - `DASHBOARD_LOCAL_FALLBACK_ENABLED=true` (localhost-only direct credential fallback)
+6. Optional strict allowlist:
    - `DASHBOARD_IP_ALLOWLIST_ENABLED=true`
    - `DASHBOARD_ALLOWED_IPS=<your_public_ip>,127.0.0.1,::1`
-5. Keep service localhost-bound:
+7. Keep service localhost-bound:
    - `HOST=127.0.0.1`
    - `PORT=8081`
-6. Optional mail probe tuning:
+8. Optional mail probe tuning:
    - `DASHBOARD_MAIL_PROBE_COOLDOWN_SECONDS=300`
 
 ## 2. DNS Recovery Checklist (`NXDOMAIN`)
@@ -120,6 +127,9 @@ curl -i -c /tmp/email-vps.cookie -X POST https://mail.stackpilot.in/auth/otp/req
 curl -i -b /tmp/email-vps.cookie -X POST https://mail.stackpilot.in/auth/otp/verify \
   -H 'Content-Type: application/json' \
   -d '{"code":"123456"}'
+curl -i -b /tmp/email-vps.cookie -X POST https://mail.stackpilot.in/auth/login \
+  -H 'Content-Type: application/json' \
+  -d '{"username":"<DASHBOARD_LOGIN_USER>","password":"<DASHBOARD_LOGIN_PASS>"}'
 ```
 
 Dashboard APIs (after login cookie):
@@ -132,6 +142,7 @@ Dashboard APIs (after login cookie):
 - `/api/v1/dashboard/programs`
 - `/api/v1/dashboard/mail-check`
 - `/api/v1/dashboard/mail-probe` (POST)
+- `/api/v1/dashboard/otp-delivery`
 
 Dashboard page routes:
 
@@ -142,7 +153,20 @@ Dashboard page routes:
 - `/dashboard/performance`
 - `/dashboard/stability`
 - `/dashboard/programs`
+- `/dashboard/operations`
+- `/dashboard/operations/aide`
+- `/dashboard/operations/fail2ban`
+- `/dashboard/operations/relay`
+- `/dashboard/operations/postfix`
+- `/dashboard/operations/crontab`
 - `/dashboard/mail`
+
+Operations APIs:
+
+- `/api/v1/dashboard/operations?window=24h|7d|30d`
+- `/api/v1/dashboard/operations/control/:control?window=24h|7d|30d`
+- `/api/v1/dashboard/ops-events?source=&status=&severity=&window=&limit=&offset=`
+- `/api/v1/dashboard/operations/recheck` (POST)
 
 Mail API should remain non-public via local-only guard:
 
@@ -208,13 +232,94 @@ This removes stale user/root cron entries, sets `MAILTO=""`, and keeps observabi
   - update `.env` `DASHBOARD_ALLOWED_IPS=<current_client_ip>,127.0.0.1,::1`.
   - apply with `pm2 restart email-vps --update-env && pm2 save`.
 - `401` on dashboard APIs: missing/expired session cookie.
+- `403 OTP_REQUIRED` on `/auth/login`:
+  - expected for public requests that skipped OTP verification.
+  - complete `/auth/otp/request` and `/auth/otp/verify` first.
+- `Cannot GET /dashboard/operations` or `Cannot GET /dashboard/operations/<control>`:
+  - cause: running PM2 process has stale route table from older runtime.
+  - fix:
+    - `pm2 restart email-vps --update-env`
+    - `pm2 save`
+  - verify:
+    - `curl -i https://mail.stackpilot.in/dashboard/operations`
+    - `curl -i https://mail.stackpilot.in/dashboard/operations/postfix`
+- deep page stuck on `Loading ...`:
+  - cause: browser cached older page bootstrap module.
+  - fix:
+    - hard refresh once or clear site cache
+    - confirm API fetches appear in network panel (`/auth/session`, page-specific `/api/v1/dashboard/*`)
+    - revalidate page load after PM2 restart
 - local start fails with secret length/comment issues: quote `DASHBOARD_SESSION_SECRET` if it contains `#`.
 - dashboard loads but charts empty: no snapshots yet; wait for snapshot worker or trigger refresh after traffic.
 - cron spam with `/opt/stackpilot-monitor/generate_metrics.sh: not found`:
   - cause: stale cron entry from legacy monitor path.
   - fix: run `deploy/ops/fix_metrics_cron.sh` for both user and root scopes and confirm new cron path under `/home/devuser/dev/email-vps`.
 
-## 10. Rollback
+## 10. Postfix Duplicate Warning Remediation
+
+Symptom in cron/logwatch mail:
+
+- `overriding earlier entry: relayhost=...`
+- `overriding earlier entry: smtp_tls_security_level=...`
+
+Remediation:
+
+```bash
+sudo bash /home/devuser/dev/email-vps/deploy/ops/fix_postfix_config.sh
+sudo postconf -n | grep -E 'relayhost|smtp_tls_security_level'
+sudo tail -n 120 /var/log/mail.log | grep -E 'overriding earlier entry|postfix'
+```
+
+Recheck from dashboard APIs:
+
+```bash
+curl -i -b /tmp/email-vps.cookie -X POST https://mail.stackpilot.in/api/v1/dashboard/operations/recheck
+curl -i -b /tmp/email-vps.cookie "https://mail.stackpilot.in/api/v1/dashboard/ops-events?source=postfix&status=open&limit=20&offset=0"
+```
+
+Expected:
+
+- duplicate-warning events move from `open` to `resolved` after collector cycles
+- postfix control health returns `healthy` or `warning` without duplicate-key noise
+
+## 11. Operations Collector Validation
+
+Validate deep-ops state from a logged-in session:
+
+```bash
+curl -i -b /tmp/email-vps.cookie "https://mail.stackpilot.in/api/v1/dashboard/operations?window=24h"
+curl -i -b /tmp/email-vps.cookie "https://mail.stackpilot.in/api/v1/dashboard/ops-events?source=cron&status=open&limit=20&offset=0"
+curl -i -b /tmp/email-vps.cookie "https://mail.stackpilot.in/api/v1/dashboard/ops-events?source=logwatch&status=open&limit=20&offset=0"
+curl -i -b /tmp/email-vps.cookie "https://mail.stackpilot.in/api/v1/dashboard/mail-check"
+curl -i -b /tmp/email-vps.cookie "https://mail.stackpilot.in/api/v1/dashboard/programs"
+```
+
+Verify:
+
+- AIDE, Fail2Ban, relay, postfix, cron, and logwatch controls are populated
+- event timeline reflects source/severity/status filters correctly
+- freshness/collector lag is visible in operations snapshot
+
+## 12. Lighthouse Clean-Profile Release Gate
+
+Run Lighthouse in a clean browser profile (extensions disabled) to avoid false regressions:
+
+1. Open incognito with extensions off.
+2. Audit:
+   - `https://mail.stackpilot.in/dashboard/activity`
+   - `https://mail.stackpilot.in/dashboard/operations`
+3. Capture:
+   - Performance / Best Practices / SEO scores
+   - CLS value and render-blocking resource findings
+4. Keep CSP in report-only during tuning.
+5. Promote CSP to enforce mode only after report noise review and route-by-route validation.
+
+Baseline capture for this phase (February 19, 2026):
+
+- `/dashboard/activity`: Performance `79`, Accessibility `100`, Best Practices `81`, SEO `90`
+- remaining optimization targets: CLS on masthead/nav and page-module JS weight
+
+## 13. Rollback
 
 1. Stop service:
 

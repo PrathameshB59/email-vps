@@ -4,6 +4,7 @@ async function startServer() {
   const runtime = await createRuntime();
   await runtime.retryQueue.start();
   await runtime.dashboardSnapshotWorker.start();
+  await runtime.opsInsightWorker.start();
 
   const server = runtime.app.listen(runtime.env.PORT, runtime.env.HOST, () => {
     console.log(

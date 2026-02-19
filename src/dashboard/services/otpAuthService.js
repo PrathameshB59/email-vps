@@ -25,6 +25,20 @@ function maskEmail(value) {
   return `${local.slice(0, 2)}***@${domain}`;
 }
 
+function extractEmailAddress(value) {
+  const input = String(value || "").trim();
+  if (!input) {
+    return "";
+  }
+
+  const match = input.match(/<([^>]+)>/);
+  if (match && match[1]) {
+    return String(match[1]).trim().toLowerCase();
+  }
+
+  return input.toLowerCase();
+}
+
 function randomDigits(length) {
   const chars = [];
   for (let index = 0; index < Number(length); index += 1) {
@@ -50,12 +64,13 @@ function timingSafeEqual(a, b) {
 }
 
 class OtpAuthError extends Error {
-  constructor({ code, message, statusCode = 400, retryAfterSeconds = null }) {
+  constructor({ code, message, statusCode = 400, retryAfterSeconds = null, otpRequestId = null }) {
     super(message);
     this.name = "OtpAuthError";
     this.code = code;
     this.statusCode = statusCode;
     this.retryAfterSeconds = retryAfterSeconds;
+    this.otpRequestId = otpRequestId;
   }
 }
 
@@ -114,6 +129,15 @@ function createOtpAuthService({ env, repository, transport, logger = console }) 
   const challengeCookieName = "email_vps_dashboard_otp";
   const ttlMs = Number(env.DASHBOARD_OTP_TTL_MINUTES) * 60 * 1000;
   const resendCooldownMs = Number(env.DASHBOARD_OTP_RESEND_COOLDOWN_SECONDS) * 1000;
+  const otpFrom = String(env.DASHBOARD_OTP_FROM || env.MAIL_FROM || "").trim() || env.MAIL_FROM;
+  const senderEmail = extractEmailAddress(otpFrom);
+  const recipientEmail = extractEmailAddress(env.DASHBOARD_OTP_TO);
+
+  if (senderEmail && recipientEmail && senderEmail === recipientEmail && env.NODE_ENV !== "test") {
+    logger.warn(
+      "[otp] DASHBOARD_OTP_TO matches sender account. Use a separate mailbox for OTP delivery visibility."
+    );
+  }
 
   const requestLimiter = createInMemoryWindowLimiter({
     limit: env.DASHBOARD_OTP_REQUEST_RATE_LIMIT,
@@ -144,9 +168,10 @@ function createOtpAuthService({ env, repository, transport, logger = console }) 
     });
   }
 
-  function getOtpMailPayload({ code, expiresMinutes }) {
+  function getOtpMailPayload({ code, expiresMinutes, otpRequestId }) {
     const safeCode = String(code || "");
     const expiresText = `${expiresMinutes} minute${expiresMinutes === 1 ? "" : "s"}`;
+    const requestId = String(otpRequestId || "");
 
     const subject = "[Email-VPS] One-Time Login Code";
     const text = [
@@ -154,9 +179,12 @@ function createOtpAuthService({ env, repository, transport, logger = console }) 
       "",
       `Your verification code is: ${safeCode}`,
       `This code expires in ${expiresText}.`,
+      requestId ? `Request ID: ${requestId}` : null,
       "",
       "If you did not request this code, ignore this email.",
-    ].join("\n");
+    ]
+      .filter(Boolean)
+      .join("\n");
 
     const html = `
       <div style="font-family:Segoe UI,Tahoma,sans-serif;background:#081426;color:#eaf5ff;padding:20px;">
@@ -167,6 +195,7 @@ function createOtpAuthService({ env, repository, transport, logger = console }) 
             ${safeCode}
           </div>
           <p style="margin:14px 0 0;color:#9fbad3;">This code expires in ${expiresText}.</p>
+          ${requestId ? `<p style="margin:8px 0 0;color:#9fbad3;">Request ID: ${requestId}</p>` : ""}
           <p style="margin:8px 0 0;color:#9fbad3;">If you did not request this code, ignore this email.</p>
         </div>
       </div>
@@ -235,6 +264,7 @@ function createOtpAuthService({ env, repository, transport, logger = console }) 
     }
 
     const challengeId = crypto.randomUUID();
+    const otpRequestId = crypto.randomUUID();
     const code = randomDigits(env.DASHBOARD_OTP_LENGTH);
     const expiresAt = toIso(nowMs() + ttlMs);
     const codeHash = hmacCodeHash(env.DASHBOARD_SESSION_SECRET, challengeId, code);
@@ -253,29 +283,60 @@ function createOtpAuthService({ env, repository, transport, logger = console }) 
       const payload = getOtpMailPayload({
         code,
         expiresMinutes: env.DASHBOARD_OTP_TTL_MINUTES,
+        otpRequestId,
       });
 
-      await transport.sendMail({
-        from: env.MAIL_FROM,
+      const sendResult = await transport.sendMail({
+        from: otpFrom,
         to: env.DASHBOARD_OTP_TO,
         subject: payload.subject,
         text: payload.text,
         html: payload.html,
+        headers: {
+          "X-Email-VPS-OTP-Request-ID": otpRequestId,
+        },
       });
+
+      try {
+        await repository.createDashboardOtpDeliveryEvent({
+          otpRequestId,
+          challengeId,
+          recipientEmail: env.DASHBOARD_OTP_TO,
+          deliveryStage: "accepted_by_local_relay",
+          providerMessageId: sendResult?.messageId || null,
+        });
+      } catch (eventError) {
+        logger.error("[otp] failed to persist delivery event:", eventError);
+      }
     } catch (error) {
       await repository.releaseDashboardOtpQuota(quotaDate);
       await repository.expireOtpChallenge({ challengeId });
+
+      try {
+        await repository.createDashboardOtpDeliveryEvent({
+          otpRequestId,
+          challengeId,
+          recipientEmail: env.DASHBOARD_OTP_TO,
+          deliveryStage: "delivery_failed",
+          errorCode: error?.code || null,
+          errorMessage: error?.message || "unknown delivery failure",
+        });
+      } catch (eventError) {
+        logger.error("[otp] failed to persist delivery failure event:", eventError);
+      }
 
       logger.error("[otp] delivery failed:", error);
       throw new OtpAuthError({
         code: "OTP_DELIVERY_FAILED",
         message: "Failed to deliver OTP email.",
         statusCode: 503,
+        otpRequestId,
       });
     }
 
     requestLimiter.consume(requestIp);
     return {
+      otpRequestId,
       challengeId,
       expiresInSeconds: Math.trunc(ttlMs / 1000),
       resendAvailableInSeconds: Math.trunc(resendCooldownMs / 1000),
@@ -358,7 +419,24 @@ function createOtpAuthService({ env, repository, transport, logger = console }) 
     await repository.markOtpChallengeUsed({ challengeId });
     return {
       ok: true,
+      challengeId,
       recipientMasked: maskEmail(challenge.recipient_email),
+    };
+  }
+
+  async function getDeliveryDiagnostics({ limit = 25 } = {}) {
+    const normalizedLimit = Math.min(Math.max(Number(limit) || 25, 1), 100);
+    const [events, summary] = await Promise.all([
+      repository.listDashboardOtpDeliveryEvents({ limit: normalizedLimit }),
+      repository.getDashboardOtpDeliveryFailureSummary({ limit: 10 }),
+    ]);
+
+    return {
+      events,
+      failureSummary: summary.map((row) => ({
+        key: row.key,
+        count: Number(row.count || 0),
+      })),
     };
   }
 
@@ -369,6 +447,7 @@ function createOtpAuthService({ env, repository, transport, logger = console }) 
     clearChallengeCookie,
     requestOtp,
     verifyOtp,
+    getDeliveryDiagnostics,
   };
 }
 

@@ -4,8 +4,9 @@ Single-process Email-VPS service with:
 
 - Local-only mail API (`/api/v1/mail/*`) protected by bearer token.
 - One multi-page operations console with:
-  - OTP-first login (email OTP primary),
-  - credential login backup,
+  - mandatory two-step auth: email OTP first, then credentials,
+  - public direct credential login blocked by default,
+  - localhost break-glass fallback (optional),
   - signed HttpOnly session cookie,
   - optional IP allowlist toggle.
 - SQLite-backed queue/events/quota plus dashboard metric snapshots (90-day retention).
@@ -25,7 +26,9 @@ cp .env.example .env
 - `DASHBOARD_LOGIN_USER`
 - `DASHBOARD_LOGIN_PASS`
 - `DASHBOARD_SESSION_SECRET`
+- `DASHBOARD_AUTH_FLOW=otp_then_credentials`
 - `DASHBOARD_OTP_TO`
+- `DASHBOARD_OTP_FROM` (optional sender override)
 - `DASHBOARD_MAIL_PROBE_TO`
 - `DASHBOARD_MAIL_PROBE_COOLDOWN_SECONDS`
 
@@ -33,6 +36,7 @@ Optional hardening values:
 
 - `DASHBOARD_IP_ALLOWLIST_ENABLED=true`
 - `DASHBOARD_ALLOWED_IPS=<comma-separated-operator-ips>`
+- `DASHBOARD_LOCAL_FALLBACK_ENABLED=false` (disable localhost break-glass)
 
 Production bind:
 
@@ -50,9 +54,9 @@ npm start
 Auth and pages:
 
 - `GET /login`
-- `POST /auth/login`
+- `POST /auth/login` (step 2, requires OTP pre-auth for public requests)
 - `POST /auth/otp/request`
-- `POST /auth/otp/verify`
+- `POST /auth/otp/verify` (step 1 only, no session issuance)
 - `POST /auth/logout`
 - `GET /auth/session`
 - `GET /dashboard`
@@ -62,6 +66,12 @@ Auth and pages:
 - `GET /dashboard/performance`
 - `GET /dashboard/stability`
 - `GET /dashboard/programs`
+- `GET /dashboard/operations`
+- `GET /dashboard/operations/aide`
+- `GET /dashboard/operations/fail2ban`
+- `GET /dashboard/operations/relay`
+- `GET /dashboard/operations/postfix`
+- `GET /dashboard/operations/crontab`
 - `GET /dashboard/mail`
 
 Protected dashboard data APIs:
@@ -75,8 +85,13 @@ Protected dashboard data APIs:
 - `GET /api/v1/dashboard/security`
 - `GET /api/v1/dashboard/activity`
 - `GET /api/v1/dashboard/programs`
+- `GET /api/v1/dashboard/operations?window=24h|7d|30d`
+- `GET /api/v1/dashboard/operations/control/:control?window=24h|7d|30d`
+- `GET /api/v1/dashboard/ops-events?source=&status=&severity=&window=&limit=&offset=`
+- `POST /api/v1/dashboard/operations/recheck`
 - `GET /api/v1/dashboard/mail-check`
 - `POST /api/v1/dashboard/mail-probe`
+- `GET /api/v1/dashboard/otp-delivery` (authenticated diagnostics)
 
 Compatibility behavior:
 
@@ -128,6 +143,7 @@ Primary active tables:
 - `dashboard_metric_snapshots`
 - `dashboard_otp_challenges`
 - `dashboard_otp_daily_quota`
+- `dashboard_otp_delivery_events`
 - `admin_auth_events` (dashboard login audit trail)
 
 ## Public Access Recovery (NXDOMAIN)
@@ -178,6 +194,91 @@ This removes stale user/root cron references, applies:
 
 and sets `MAILTO=""` for silent cron delivery.  
 Use dashboard alerts + logs for failure observability.
+
+## Postfix Duplicate Warning Remediation (`main.cf`)
+
+If Logwatch/cron reports warnings such as:
+
+- `overriding earlier entry: relayhost=...`
+- `overriding earlier entry: smtp_tls_security_level=...`
+
+run the postfix fixer and verify config health:
+
+```bash
+sudo bash /home/devuser/dev/email-vps/deploy/ops/fix_postfix_config.sh
+sudo postconf -n | grep -E 'relayhost|smtp_tls_security_level'
+sudo tail -n 120 /var/log/mail.log | grep -E 'overriding earlier entry|postfix'
+```
+
+Then recheck from dashboard:
+
+```bash
+curl -i -b /tmp/email-vps.cookie -X POST https://mail.stackpilot.in/api/v1/dashboard/operations/recheck
+curl -i -b /tmp/email-vps.cookie "https://mail.stackpilot.in/api/v1/dashboard/ops-events?source=postfix&status=open&limit=20&offset=0"
+```
+
+## Operations Collector Validation
+
+Validate deep-ops state end-to-end:
+
+```bash
+curl -i -b /tmp/email-vps.cookie "https://mail.stackpilot.in/api/v1/dashboard/operations?window=24h"
+curl -i -b /tmp/email-vps.cookie "https://mail.stackpilot.in/api/v1/dashboard/ops-events?source=cron&status=open&limit=20&offset=0"
+curl -i -b /tmp/email-vps.cookie "https://mail.stackpilot.in/api/v1/dashboard/ops-events?source=logwatch&status=open&limit=20&offset=0"
+curl -i -b /tmp/email-vps.cookie "https://mail.stackpilot.in/api/v1/dashboard/mail-check"
+curl -i -b /tmp/email-vps.cookie "https://mail.stackpilot.in/api/v1/dashboard/programs"
+```
+
+Expected:
+
+- controls include AIDE/Fail2Ban/relay/postfix/cron/logwatch signals
+- timeline contains open/resolved event lifecycle with fingerprints
+- stale `/opt/stackpilot-monitor` references report in cron diagnostics when present
+
+## Operations Route Recovery Checklist
+
+If `https://mail.stackpilot.in/dashboard/operations` or nested control pages return `Cannot GET`:
+
+1. verify current runtime is refreshed:
+
+```bash
+pm2 restart email-vps --update-env
+pm2 save
+```
+
+2. validate routes:
+
+```bash
+curl -i https://mail.stackpilot.in/dashboard/operations
+curl -i https://mail.stackpilot.in/dashboard/operations/postfix
+curl -i -b /tmp/email-vps.cookie "https://mail.stackpilot.in/api/v1/dashboard/operations/control/postfix?window=24h"
+```
+
+3. expected:
+- page routes return `200` HTML
+- control API returns `200` JSON
+
+If deep pages stay on `Loading ...`, hard-refresh once after deploy so updated page module bootstrap is loaded.
+
+## Lighthouse Clean-Profile Audit Procedure
+
+Use clean-profile Chrome runs for consistent baselines (extensions can skew results):
+
+1. Open an incognito window with extensions disabled.
+2. Audit:
+   - `https://mail.stackpilot.in/dashboard/activity`
+   - `https://mail.stackpilot.in/dashboard/operations`
+3. Check and record:
+   - Performance
+   - Best Practices
+   - SEO
+   - CLS, render-blocking requests, and JS payload findings
+4. Keep CSP in report-only during tuning; move to enforce mode only after verification.
+
+Reference baseline (captured February 19, 2026, clean-profile target run):
+
+- `/dashboard/activity`: Performance `79`, Accessibility `100`, Best Practices `81`, SEO `90`
+- primary remaining optimizations: CLS stabilization on masthead/nav and route JS payload tuning
 
 ## Deployment Assets
 

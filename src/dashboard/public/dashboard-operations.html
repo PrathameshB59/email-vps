@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta
+    name="description"
+    content="Email-VPS Operations deep dive for AIDE, Fail2Ban, relay, postfix, and cron/logwatch timeline diagnostics."
+  />
+  <title>Email-VPS Operations Console</title>
+  <link rel="icon" href="/dashboard/assets/favicon.svg" type="image/svg+xml" />
+  <link rel="shortcut icon" href="/dashboard/assets/favicon.svg" type="image/svg+xml" />
+  <link rel="stylesheet" href="/dashboard/assets/dashboard.css" />
+</head>
+<body data-dashboard-page="operations">
+  <main class="shell shell-dashboard">
+    <nav id="dashboardNavMount" class="console-nav-shell" aria-label="Dashboard sections">
+      <div class="console-brand">
+        <span class="console-dot"></span>
+        Email-VPS Operations Console
+      </div>
+      <div class="console-tabs">
+        <a class="console-tab" data-nav-key="overview" href="/dashboard">Overview</a>
+        <a class="console-tab" data-nav-key="activity" href="/dashboard/activity">Activity</a>
+        <a class="console-tab" data-nav-key="security" href="/dashboard/security">Security</a>
+        <a class="console-tab" data-nav-key="health" href="/dashboard/health">Health</a>
+        <a class="console-tab" data-nav-key="performance" href="/dashboard/performance">Performance</a>
+        <a class="console-tab" data-nav-key="stability" href="/dashboard/stability">Stability</a>
+        <a class="console-tab" data-nav-key="programs" href="/dashboard/programs">Programs</a>
+        <a class="console-tab" data-nav-key="operations" href="/dashboard/operations">Operations</a>
+        <a class="console-tab" data-nav-key="mail" href="/dashboard/mail">Mail</a>
+      </div>
+    </nav>
+
+    <header class="page-masthead">
+      <div>
+        <p class="eyebrow">Operations Deep Dive</p>
+        <h1>AIDE, Fail2Ban, Relay, Postfix, Cron, and Logwatch</h1>
+        <p id="pageSubline" class="subline">Loading operations controls and timeline diagnostics...</p>
+      </div>
+      <div class="control-row">
+        <select id="opsWindow" aria-label="Operations window">
+          <option value="24h">Last 24h</option>
+          <option value="7d">Last 7d</option>
+          <option value="30d">Last 30d</option>
+        </select>
+        <button id="refreshBtn" type="button">Refresh</button>
+        <button id="opsRecheckBtn" type="button">Recheck</button>
+        <button id="logoutBtn" type="button" class="danger">Logout</button>
+      </div>
+    </header>
+
+    <nav class="ops-subnav" aria-label="Operations controls">
+      <a class="ops-subnav-chip" data-ops-target="all" href="/dashboard/operations">All</a>
+      <a class="ops-subnav-chip" data-ops-target="aide" href="/dashboard/operations/aide">AIDE</a>
+      <a class="ops-subnav-chip" data-ops-target="fail2ban" href="/dashboard/operations/fail2ban">Fail2Ban</a>
+      <a class="ops-subnav-chip" data-ops-target="relay" href="/dashboard/operations/relay">Relay</a>
+      <a class="ops-subnav-chip" data-ops-target="postfix" href="/dashboard/operations/postfix">Postfix</a>
+      <a class="ops-subnav-chip" data-ops-target="crontab" href="/dashboard/operations/crontab">Crontab</a>
+    </nav>
+
+    <section class="ops-filter-row">
+      <div class="control-row">
+        <select id="opsSourceFilter" aria-label="Filter timeline source">
+          <option value="">All sources</option>
+          <option value="cron">Cron</option>
+          <option value="logwatch">Logwatch</option>
+          <option value="postfix">Postfix</option>
+          <option value="relay">Relay</option>
+          <option value="aide">AIDE</option>
+          <option value="fail2ban">Fail2Ban</option>
+        </select>
+        <select id="opsStatusFilter" aria-label="Filter timeline status">
+          <option value="">All status</option>
+          <option value="open">Open</option>
+          <option value="resolved">Resolved</option>
+        </select>
+        <select id="opsSeverityFilter" aria-label="Filter timeline severity">
+          <option value="">All severity</option>
+          <option value="critical">Critical</option>
+          <option value="warning">Warning</option>
+          <option value="info">Info</option>
+        </select>
+        <button id="opsFilterResetBtn" type="button">Reset Filters</button>
+      </div>
+      <p class="meta">Timeline filters apply to source, status, and severity while preserving selected window.</p>
+    </section>
+
+    <section id="operationsSummary" class="page-grid page-grid-4"></section>
+    <section id="operationsControls" class="page-grid page-grid-2"></section>
+    <section id="operationsIssues" class="page-grid page-grid-1"></section>
+    <section id="operationsTimeline" class="page-grid page-grid-1"></section>
+    <section id="operationsHints" class="page-grid page-grid-1"></section>
+  </main>
+
+  <script defer src="/dashboard/assets/dashboard-nav.js"></script>
+  <script type="module" src="/dashboard/assets/dashboard-pages.js"></script>
+</body>
+</html>
