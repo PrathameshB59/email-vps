@@ -52,10 +52,12 @@ test("single dashboard auth, allowlist, and protected APIs", async () => {
     rateLimiter: core.rateLimiter,
     repository: core.repository,
     dashboardService: core.dashboardService,
+    opsInsightService: core.opsInsightService,
     programCheckerService: core.programCheckerService,
     mailCheckerService: core.mailCheckerService,
     activityCheckerService: core.activityCheckerService,
     otpAuthService: core.otpAuthService,
+    healthCheckService: core.healthCheckService,
   });
 
   const agent = request.agent(app);
@@ -103,6 +105,12 @@ test("single dashboard auth, allowlist, and protected APIs", async () => {
       "/dashboard/performance",
       "/dashboard/stability",
       "/dashboard/programs",
+      "/dashboard/operations",
+      "/dashboard/operations/aide",
+      "/dashboard/operations/fail2ban",
+      "/dashboard/operations/relay",
+      "/dashboard/operations/postfix",
+      "/dashboard/operations/crontab",
       "/dashboard/mail",
     ];
 
@@ -152,6 +160,36 @@ test("single dashboard auth, allowlist, and protected APIs", async () => {
     assert.equal(mailCheck.status, 200);
     assert.equal(typeof mailCheck.body.relay.ok, "boolean");
 
+    const operations = await agent.get("/api/v1/dashboard/operations?window=24h");
+    assert.equal(operations.status, 200);
+    assert.equal(typeof operations.body.overallHealth, "string");
+    assert.equal(Array.isArray(operations.body.topOpenIssues), true);
+
+    const operationsControl = await agent.get("/api/v1/dashboard/operations/control/postfix?window=24h");
+    assert.equal(operationsControl.status, 200);
+    assert.equal(operationsControl.body.control, "postfix");
+    assert.equal(Array.isArray(operationsControl.body.topOpenIssues), true);
+
+    const operationsControlInvalid = await agent.get(
+      "/api/v1/dashboard/operations/control/not-a-control?window=24h"
+    );
+    assert.equal(operationsControlInvalid.status, 400);
+    assert.equal(operationsControlInvalid.body.error, "INVALID_CONTROL");
+
+    const opsEvents = await agent.get(
+      "/api/v1/dashboard/ops-events?source=postfix&status=open&severity=warning&limit=10&offset=0"
+    );
+    assert.equal(opsEvents.status, 200);
+    assert.equal(Array.isArray(opsEvents.body.events), true);
+    assert.equal(opsEvents.body.filters.source, "postfix");
+    assert.equal(opsEvents.body.filters.status, "open");
+    assert.equal(opsEvents.body.filters.severity, "warning");
+
+    const opsRecheck = await agent.post("/api/v1/dashboard/operations/recheck").send({});
+    assert.equal(opsRecheck.status, 200);
+    assert.equal(opsRecheck.body.ok, true);
+    assert.equal(typeof opsRecheck.body.snapshotTimestamp, "string");
+
     const probeSend = await agent.post("/api/v1/dashboard/mail-probe").send({});
     assert.equal(probeSend.status, 200);
     assert.equal(probeSend.body.ok, true);
@@ -179,7 +217,7 @@ test("single dashboard auth, allowlist, and protected APIs", async () => {
   }
 });
 
-test("otp-first public login flow issues and verifies challenge", async () => {
+test("otp-first public login enforces otp then credentials and exposes diagnostics", async () => {
   const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "email-vps-dashboard-otp-"));
   const dbPath = path.join(tempDir, "dashboard.sqlite");
   const sentMessages = [];
@@ -210,8 +248,13 @@ test("otp-first public login flow issues and verifies challenge", async () => {
       DASHBOARD_SESSION_SECRET: "dashboard-session-secret-value",
       DASHBOARD_IP_ALLOWLIST_ENABLED: "false",
       DASHBOARD_TRUST_PROXY: "true",
+      DASHBOARD_AUTH_FLOW: "otp_then_credentials",
+      DASHBOARD_LOCAL_FALLBACK_ENABLED: "true",
+      DASHBOARD_PREAUTH_TTL_MINUTES: "5",
       DASHBOARD_OTP_PRIMARY_ENABLED: "true",
       DASHBOARD_OTP_TO: "owner@example.com",
+      DASHBOARD_OTP_FROM: "Email VPS OTP <otp-sender@example.com>",
+      DASHBOARD_OTP_DIAGNOSTICS_ENABLED: "true",
       DASHBOARD_OTP_LENGTH: "6",
       DASHBOARD_OTP_TTL_MINUTES: "10",
       DASHBOARD_OTP_RESEND_COOLDOWN_SECONDS: "1",
@@ -230,15 +273,27 @@ test("otp-first public login flow issues and verifies challenge", async () => {
     rateLimiter: core.rateLimiter,
     repository: core.repository,
     dashboardService: core.dashboardService,
+    opsInsightService: core.opsInsightService,
     programCheckerService: core.programCheckerService,
     mailCheckerService: core.mailCheckerService,
     activityCheckerService: core.activityCheckerService,
     otpAuthService: core.otpAuthService,
+    healthCheckService: core.healthCheckService,
   });
 
   const agent = request.agent(app);
 
   try {
+    const directCredentialWithoutOtp = await request(app)
+      .post("/auth/login")
+      .set("x-forwarded-for", "203.0.113.9")
+      .send({
+        username: "owner",
+        password: "StrongPass123!",
+      });
+    assert.equal(directCredentialWithoutOtp.status, 403);
+    assert.equal(directCredentialWithoutOtp.body.error, "OTP_REQUIRED");
+
     const publicLoginPage = await request(app)
       .get("/login")
       .set("x-forwarded-for", "203.0.113.9");
@@ -250,6 +305,7 @@ test("otp-first public login flow issues and verifies challenge", async () => {
       .send({});
     assert.equal(otpRequest.status, 200);
     assert.equal(otpRequest.body.ok, true);
+    assert.equal(typeof otpRequest.body.otpRequestId, "string");
     assert.equal(sentMessages.length, 1);
 
     const sentText = String(sentMessages[0]?.text || "");
@@ -270,10 +326,40 @@ test("otp-first public login flow issues and verifies challenge", async () => {
       .send({ code: otpCode });
     assert.equal(goodVerify.status, 200);
     assert.equal(goodVerify.body.ok, true);
-    assert.equal(goodVerify.body.mode, "otp");
+    assert.equal(goodVerify.body.mode, "otp_verified");
+    assert.equal(goodVerify.body.next, "credentials_required");
 
-    const overview = await agent.get("/api/v1/dashboard/overview");
+    const stillUnauthorized = await agent
+      .get("/api/v1/dashboard/overview")
+      .set("x-forwarded-for", "203.0.113.9");
+    assert.equal(stillUnauthorized.status, 401);
+
+    const postOtpCredentialLogin = await agent
+      .post("/auth/login")
+      .set("x-forwarded-for", "203.0.113.9")
+      .send({
+        username: "owner",
+        password: "StrongPass123!",
+      });
+    assert.equal(postOtpCredentialLogin.status, 200);
+    assert.equal(postOtpCredentialLogin.body.mode, "otp_then_credentials");
+
+    const overview = await agent
+      .get("/api/v1/dashboard/overview")
+      .set("x-forwarded-for", "203.0.113.9");
     assert.equal(overview.status, 200);
+
+    const otpDiagnostics = await agent
+      .get("/api/v1/dashboard/otp-delivery?limit=5")
+      .set("x-forwarded-for", "203.0.113.9");
+    assert.equal(otpDiagnostics.status, 200);
+    assert.equal(otpDiagnostics.body.ok, true);
+    assert.equal(Array.isArray(otpDiagnostics.body.events), true);
+    assert.equal(otpDiagnostics.body.events.length > 0, true);
+    assert.equal(
+      String(otpDiagnostics.body.events[0].otpRequestId || "").length > 0,
+      true
+    );
   } finally {
     await core.close();
     fs.rmSync(tempDir, { recursive: true, force: true });
