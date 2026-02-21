@@ -66,9 +66,17 @@ export function badgeClass(value) {
   const normalized = String(value || "").toLowerCase();
   if (["critical", "failed", "error", "high"].includes(normalized)) return "badge critical";
   if (
-    ["warning", "warn", "retrying", "queued", "degraded", "unknown", "active-warning"].includes(
-      normalized
-    )
+    [
+      "warning",
+      "warn",
+      "retrying",
+      "queued",
+      "degraded",
+      "unknown",
+      "unknown_permission",
+      "permission_limited",
+      "active-warning",
+    ].includes(normalized)
   ) {
     return "badge warning";
   }

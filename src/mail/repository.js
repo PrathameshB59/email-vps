@@ -255,6 +255,44 @@ async function createRepository({ dbPath }) {
 
     CREATE INDEX IF NOT EXISTS idx_ops_events_severity_status_last_seen
       ON ops_events(severity, status, last_seen_at);
+
+    CREATE TABLE IF NOT EXISTS ops_command_runs (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      run_id TEXT NOT NULL UNIQUE,
+      control TEXT NOT NULL,
+      command_key TEXT NOT NULL,
+      command_label TEXT NOT NULL,
+      command_preview TEXT NOT NULL,
+      requested_by_user TEXT,
+      requested_by_ip TEXT,
+      status TEXT NOT NULL DEFAULT 'queued',
+      started_at TEXT,
+      finished_at TEXT,
+      duration_ms INTEGER,
+      exit_code INTEGER,
+      error_code TEXT,
+      error_message TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_ops_command_runs_control_key_created
+      ON ops_command_runs(control, command_key, created_at);
+
+    CREATE INDEX IF NOT EXISTS idx_ops_command_runs_status_updated
+      ON ops_command_runs(status, updated_at);
+
+    CREATE TABLE IF NOT EXISTS ops_command_output (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      run_id TEXT NOT NULL,
+      stream TEXT NOT NULL,
+      line TEXT NOT NULL,
+      seq INTEGER NOT NULL,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_ops_command_output_run_seq
+      ON ops_command_output(run_id, seq);
   `);
 
   const repository = {
@@ -1426,6 +1464,212 @@ async function createRepository({ dbPath }) {
       await db.run(
         `DELETE FROM ops_events
          WHERE datetime(last_seen_at) < datetime('now', ?)`,
+        `-${Number(retentionDays)} days`
+      );
+    },
+
+    async createOpsCommandRun({
+      runId,
+      control,
+      commandKey,
+      commandLabel,
+      commandPreview,
+      requestedByUser = null,
+      requestedByIp = null,
+      status = "queued",
+      startedAt = null,
+      finishedAt = null,
+      durationMs = null,
+      exitCode = null,
+      errorCode = null,
+      errorMessage = null,
+    }) {
+      await db.run(
+        `INSERT INTO ops_command_runs (
+          run_id,
+          control,
+          command_key,
+          command_label,
+          command_preview,
+          requested_by_user,
+          requested_by_ip,
+          status,
+          started_at,
+          finished_at,
+          duration_ms,
+          exit_code,
+          error_code,
+          error_message,
+          created_at,
+          updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        String(runId || ""),
+        String(control || ""),
+        String(commandKey || ""),
+        String(commandLabel || ""),
+        String(commandPreview || ""),
+        requestedByUser == null ? null : String(requestedByUser),
+        requestedByIp == null ? null : String(requestedByIp),
+        String(status || "queued"),
+        startedAt == null ? null : String(startedAt),
+        finishedAt == null ? null : String(finishedAt),
+        durationMs == null ? null : Number(durationMs),
+        exitCode == null ? null : Number(exitCode),
+        errorCode == null ? null : String(errorCode),
+        errorMessage == null ? null : String(errorMessage),
+        nowIso(),
+        nowIso()
+      );
+
+      return repository.getOpsCommandRunByRunId(runId);
+    },
+
+    async updateOpsCommandRun(runId, patch = {}) {
+      const updates = [];
+      const params = [];
+
+      const mappers = {
+        status: "status",
+        startedAt: "started_at",
+        finishedAt: "finished_at",
+        durationMs: "duration_ms",
+        exitCode: "exit_code",
+        errorCode: "error_code",
+        errorMessage: "error_message",
+      };
+
+      for (const [key, column] of Object.entries(mappers)) {
+        if (Object.prototype.hasOwnProperty.call(patch, key)) {
+          updates.push(`${column} = ?`);
+          const value = patch[key];
+          if (value == null) {
+            params.push(null);
+          } else if (["durationMs", "exitCode"].includes(key)) {
+            params.push(Number(value));
+          } else {
+            params.push(String(value));
+          }
+        }
+      }
+
+      updates.push("updated_at = ?");
+      params.push(nowIso());
+      params.push(String(runId || ""));
+
+      await db.run(
+        `UPDATE ops_command_runs
+         SET ${updates.join(", ")}
+         WHERE run_id = ?`,
+        ...params
+      );
+
+      return repository.getOpsCommandRunByRunId(runId);
+    },
+
+    async getOpsCommandRunByRunId(runId) {
+      return db.get(
+        `SELECT
+           id,
+           run_id AS runId,
+           control,
+           command_key AS commandKey,
+           command_label AS commandLabel,
+           command_preview AS commandPreview,
+           requested_by_user AS requestedByUser,
+           requested_by_ip AS requestedByIp,
+           status,
+           started_at AS startedAt,
+           finished_at AS finishedAt,
+           duration_ms AS durationMs,
+           exit_code AS exitCode,
+           error_code AS errorCode,
+           error_message AS errorMessage,
+           created_at AS createdAt,
+           updated_at AS updatedAt
+         FROM ops_command_runs
+         WHERE run_id = ?
+         LIMIT 1`,
+        String(runId || "")
+      );
+    },
+
+    async appendOpsCommandOutput({ runId, stream = "stdout", line, seq }) {
+      await db.run(
+        `INSERT INTO ops_command_output (
+          run_id,
+          stream,
+          line,
+          seq,
+          created_at
+        ) VALUES (?, ?, ?, ?, ?)`,
+        String(runId || ""),
+        String(stream || "stdout"),
+        String(line || ""),
+        Number(seq || 0),
+        nowIso()
+      );
+    },
+
+    async listOpsCommandOutput(runId, { limit = 500 } = {}) {
+      return db.all(
+        `SELECT
+           run_id AS runId,
+           stream,
+           line,
+           seq,
+           created_at AS createdAt
+         FROM ops_command_output
+         WHERE run_id = ?
+         ORDER BY seq ASC
+         LIMIT ?`,
+        String(runId || ""),
+        Number(limit)
+      );
+    },
+
+    async getLatestOpsCommandRun({ control, commandKey }) {
+      return db.get(
+        `SELECT
+           run_id AS runId,
+           control,
+           command_key AS commandKey,
+           command_label AS commandLabel,
+           command_preview AS commandPreview,
+           requested_by_user AS requestedByUser,
+           requested_by_ip AS requestedByIp,
+           status,
+           started_at AS startedAt,
+           finished_at AS finishedAt,
+           duration_ms AS durationMs,
+           exit_code AS exitCode,
+           error_code AS errorCode,
+           error_message AS errorMessage,
+           created_at AS createdAt,
+           updated_at AS updatedAt
+         FROM ops_command_runs
+         WHERE control = ?
+           AND command_key = ?
+         ORDER BY datetime(created_at) DESC
+         LIMIT 1`,
+        String(control || ""),
+        String(commandKey || "")
+      );
+    },
+
+    async cleanupOldOpsCommandRuns(retentionDays) {
+      await db.run(
+        `DELETE FROM ops_command_output
+         WHERE run_id IN (
+           SELECT run_id
+           FROM ops_command_runs
+           WHERE datetime(created_at) < datetime('now', ?)
+         )`,
+        `-${Number(retentionDays)} days`
+      );
+
+      await db.run(
+        `DELETE FROM ops_command_runs
+         WHERE datetime(created_at) < datetime('now', ?)`,
         `-${Number(retentionDays)} days`
       );
     },

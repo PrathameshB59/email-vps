@@ -5,14 +5,14 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta
     name="description"
-    content="Email-VPS Operations deep dive for AIDE, Fail2Ban, relay, postfix, crontab/logwatch, and rclone timeline diagnostics."
+    content="Email-VPS rclone control page with monitor-only remote connectivity, backup workflow checks, cron wiring, and artifact freshness diagnostics."
   />
-  <title>Email-VPS Operations Console</title>
+  <title>Email-VPS Rclone Control</title>
   <link rel="icon" href="/dashboard/assets/favicon.svg" type="image/svg+xml" />
   <link rel="shortcut icon" href="/dashboard/assets/favicon.svg" type="image/svg+xml" />
   <link rel="stylesheet" href="/dashboard/assets/dashboard.css" />
 </head>
-<body data-dashboard-page="operations">
+<body data-dashboard-page="operations-rclone">
   <main class="shell shell-dashboard">
     <nav id="dashboardNavMount" class="console-nav-shell" aria-label="Dashboard sections">
       <div class="console-brand">
@@ -34,21 +34,28 @@
 
     <header class="page-masthead">
       <div>
-        <p class="eyebrow">Operations Deep Dive</p>
-        <h1>AIDE, Fail2Ban, Relay, Postfix, Crontab, and Rclone</h1>
-        <p id="pageSubline" class="subline">Loading operations controls and timeline diagnostics...</p>
+        <p class="eyebrow">Operations Control</p>
+        <h1>Rclone Backup and Sync Monitor</h1>
+        <p id="pageSubline" class="subline">Loading rclone runtime, remote, cron wiring, and artifact freshness diagnostics...</p>
       </div>
       <div class="control-row">
-        <select id="opsWindow" aria-label="Operations window">
-          <option value="24h">Last 24h</option>
-          <option value="7d">Last 7d</option>
-          <option value="30d">Last 30d</option>
+        <select id="controlWindow" aria-label="Control window">
+          <option value="24h">Last 24h (Daily)</option>
+          <option value="7d">Last 7d (Weekly)</option>
+          <option value="30d">Last 30d (Monthly)</option>
+          <option value="90d">Last 90d (Quarterly)</option>
+          <option value="365d">Last 365d (Yearly)</option>
         </select>
+        <button id="rcloneTriggerBtn" type="button">Trigger Auto-Sync</button>
         <button id="refreshBtn" type="button">Refresh</button>
         <button id="opsRecheckBtn" type="button">Recheck</button>
         <button id="logoutBtn" type="button" class="danger">Logout</button>
       </div>
     </header>
+
+    <section class="ops-filter-row">
+      <p id="rcloneTriggerMeta" class="meta">Auto-sync trigger ready. Cooldown: 180s.</p>
+    </section>
 
     <nav class="ops-subnav" aria-label="Operations controls">
       <a class="ops-subnav-chip" data-ops-target="all" href="/dashboard/operations">All</a>
@@ -62,37 +69,27 @@
 
     <section class="ops-filter-row">
       <div class="control-row">
-        <select id="opsSourceFilter" aria-label="Filter timeline source">
-          <option value="">All sources</option>
-          <option value="cron">Cron</option>
-          <option value="logwatch">Logwatch</option>
-          <option value="postfix">Postfix</option>
-          <option value="relay">Relay</option>
-          <option value="aide">AIDE</option>
-          <option value="fail2ban">Fail2Ban</option>
-          <option value="rclone">Rclone</option>
-        </select>
-        <select id="opsStatusFilter" aria-label="Filter timeline status">
+        <select id="controlStatusFilter" aria-label="Filter timeline status">
           <option value="">All status</option>
           <option value="open">Open</option>
           <option value="resolved">Resolved</option>
         </select>
-        <select id="opsSeverityFilter" aria-label="Filter timeline severity">
+        <select id="controlSeverityFilter" aria-label="Filter timeline severity">
           <option value="">All severity</option>
           <option value="critical">Critical</option>
           <option value="warning">Warning</option>
           <option value="info">Info</option>
         </select>
-        <button id="opsFilterResetBtn" type="button">Reset Filters</button>
+        <button id="controlFilterResetBtn" type="button">Reset Filters</button>
       </div>
-      <p class="meta">Timeline filters apply to source, status, and severity while preserving selected window.</p>
+      <p class="meta">Rclone timeline view supports status/severity filters within selected window.</p>
     </section>
 
-    <section id="operationsSummary" class="page-grid page-grid-4"></section>
-    <section id="operationsControls" class="page-grid page-grid-2"></section>
-    <section id="operationsIssues" class="page-grid page-grid-1"></section>
-    <section id="operationsTimeline" class="page-grid page-grid-1"></section>
-    <section id="operationsHints" class="page-grid page-grid-1"></section>
+    <section id="controlSummary" class="page-grid page-grid-4"></section>
+    <section id="controlVisuals" class="page-grid page-grid-2"></section>
+    <section id="controlStatus" class="page-grid page-grid-1"></section>
+    <section id="controlTimeline" class="page-grid page-grid-1"></section>
+    <section id="controlHints" class="page-grid page-grid-1"></section>
   </main>
 
   <script defer src="/dashboard/assets/dashboard-nav.js"></script>

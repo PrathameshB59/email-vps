@@ -84,7 +84,36 @@ const envSchema = z.object({
   DASHBOARD_OPS_COLLECT_INTERVAL_SECONDS: z.coerce.number().int().positive().default(300),
   DASHBOARD_OPS_RETENTION_DAYS: z.coerce.number().int().positive().default(90),
   DASHBOARD_OPS_LOG_TAIL_LINES: z.coerce.number().int().positive().default(400),
+  DASHBOARD_OPS_COMMAND_RUNNER_ENABLED: boolFromString.default(false),
+  DASHBOARD_OPS_COMMAND_TIMEOUT_SECONDS: z.coerce.number().int().positive().default(180),
+  DASHBOARD_OPS_COMMAND_COOLDOWN_SECONDS: z.coerce.number().int().positive().default(90),
+  DASHBOARD_OPS_COMMAND_MAX_OUTPUT_LINES: z.coerce.number().int().positive().default(500),
+  DASHBOARD_OPS_DAEMON_ENABLED: boolFromString.default(false),
+  DASHBOARD_OPS_DAEMON_SOCKET_PATH: z.string().default("/run/email-vps-opsd.sock"),
+  DASHBOARD_OPS_DAEMON_HMAC_SECRET: z.string().default(""),
+  DASHBOARD_OPS_DAEMON_REQUEST_TTL_SECONDS: z.coerce.number().int().positive().default(30),
+  DASHBOARD_OPS_DAEMON_CONNECT_TIMEOUT_MS: z.coerce.number().int().positive().default(5000),
+  DASHBOARD_OPS_DAEMON_IO_TIMEOUT_MS: z.coerce.number().int().positive().default(240000),
+  DASHBOARD_AIDE_CHECK_UNIT: z.string().default("email-vps-aide-check.service"),
+  DASHBOARD_AIDE_BASELINE_LIST_UNIT: z.string().default("email-vps-aide-baseline-list.service"),
+  DASHBOARD_AIDE_INIT_UNIT: z.string().default("email-vps-aide-init.service"),
+  DASHBOARD_FAIL2BAN_STATUS_UNIT: z.string().default("email-vps-fail2ban-status.service"),
+  DASHBOARD_POSTFIX_CHECK_UNIT: z.string().default("email-vps-postfix-check.service"),
+  DASHBOARD_RELAY_PROBE_UNIT: z.string().default("email-vps-relay-probe.service"),
+  DASHBOARD_CRONTAB_CHECK_UNIT: z.string().default("email-vps-crontab-check.service"),
+  DASHBOARD_RCLONE_SYNC_UNIT: z.string().default("email-vps-rclone-sync.service"),
   DASHBOARD_POSTFIX_MAIN_CF_PATH: z.string().default("/etc/postfix/main.cf"),
+  DASHBOARD_RCLONE_REMOTE: z.string().default("gdrive"),
+  DASHBOARD_RCLONE_TARGET: z.string().default("gdrive:vps/devuser"),
+  DASHBOARD_RCLONE_BACKUP_DIR: z.string().default("/home/devuser/backups"),
+  DASHBOARD_RCLONE_BACKUP_SCRIPT: z.string().default("/home/devuser/backup-nightly.sh"),
+  DASHBOARD_RCLONE_AUTOSYNC_SCRIPT: z.string().default("/home/devuser/auto-sync.sh"),
+  DASHBOARD_RCLONE_BACKUP_LOG: z.string().default("/home/devuser/backups/backup.log"),
+  DASHBOARD_RCLONE_SYNC_LOG: z.string().default("/home/devuser/backups/sync.log"),
+  DASHBOARD_RCLONE_CONFIG_PATH: z.string().default("/home/devuser/.config/rclone/rclone.conf"),
+  DASHBOARD_RCLONE_STALE_HOURS: z.coerce.number().int().positive().default(24),
+  DASHBOARD_RCLONE_AUTOSYNC_TRIGGER_ENABLED: boolFromString.default(true),
+  DASHBOARD_RCLONE_AUTOSYNC_COOLDOWN_SECONDS: z.coerce.number().int().positive().default(180),
   DASHBOARD_OTP_PRIMARY_ENABLED: boolFromString.default(true),
   DASHBOARD_OTP_TO: z.string().email("DASHBOARD_OTP_TO must be a valid email"),
   DASHBOARD_OTP_FROM: z.string().default(""),
@@ -108,6 +137,11 @@ function parseEnv(rawEnv) {
     const data = parsed.data;
     if (data.DASHBOARD_IP_ALLOWLIST_ENABLED && (!data.DASHBOARD_ALLOWED_IPS || data.DASHBOARD_ALLOWED_IPS.length === 0)) {
       throw new Error("Invalid environment configuration: DASHBOARD_ALLOWED_IPS: required when DASHBOARD_IP_ALLOWLIST_ENABLED=true");
+    }
+    if (data.DASHBOARD_OPS_DAEMON_ENABLED && String(data.DASHBOARD_OPS_DAEMON_HMAC_SECRET || "").length < 16) {
+      throw new Error(
+        "Invalid environment configuration: DASHBOARD_OPS_DAEMON_HMAC_SECRET: required (min 16 chars) when DASHBOARD_OPS_DAEMON_ENABLED=true"
+      );
     }
 
     return data;

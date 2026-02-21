@@ -13,5 +13,15 @@ module.exports = {
         DASHBOARD_TRUST_PROXY: "true",
       },
     },
+    {
+      name: "email-vps-ops-daemon",
+      script: "src/cli/ops-daemon.js",
+      cwd: "/home/devuser/dev/email-vps",
+      instances: 1,
+      exec_mode: "fork",
+      env: {
+        NODE_ENV: "production",
+      },
+    },
   ],
 };

@@ -1,12 +1,21 @@
 const crypto = require("crypto");
 const fs = require("fs");
 const path = require("path");
-const { execFileSync } = require("child_process");
+const { execFileSync, spawn } = require("child_process");
 
 const POSTFIX_MAIN_CF_DEFAULT = "/etc/postfix/main.cf";
 const METRICS_SCRIPT_PATH = "/home/devuser/dev/email-vps/generate_metrics.sh";
 const STALE_METRICS_SCRIPT_PATH = "/opt/stackpilot-monitor/generate_metrics.sh";
-const KNOWN_OP_SOURCES = ["postfix", "relay", "cron", "logwatch", "fail2ban", "aide"];
+const RCLONE_REMOTE_DEFAULT = "gdrive";
+const RCLONE_TARGET_DEFAULT = "gdrive:vps/devuser";
+const RCLONE_BACKUP_DIR_DEFAULT = "/home/devuser/backups";
+const RCLONE_BACKUP_SCRIPT_DEFAULT = "/home/devuser/backup-nightly.sh";
+const RCLONE_AUTOSYNC_SCRIPT_DEFAULT = "/home/devuser/auto-sync.sh";
+const RCLONE_BACKUP_LOG_DEFAULT = "/home/devuser/backups/backup.log";
+const RCLONE_SYNC_LOG_DEFAULT = "/home/devuser/backups/sync.log";
+const RCLONE_CONFIG_PATH_DEFAULT = "/home/devuser/.config/rclone/rclone.conf";
+const RCLONE_TRIGGER_COOLDOWN_DEFAULT_SECONDS = 180;
+const KNOWN_OP_SOURCES = ["postfix", "relay", "cron", "logwatch", "fail2ban", "aide", "rclone"];
 const POSTFIX_DUPLICATE_KEY_SEVERITY = new Set(["relayhost", "smtp_tls_security_level"]);
 const OPERATIONS_CONTROLS = {
   aide: {
@@ -59,6 +68,20 @@ const OPERATIONS_CONTROLS = {
       "sudo grep -R -n '/opt/stackpilot-monitor/generate_metrics.sh' /etc/cron* || true",
     ],
   },
+  rclone: {
+    key: "rclone",
+    label: "Rclone Backup Sync",
+    sources: ["rclone"],
+    fixHints: [
+      "rclone version",
+      "rclone listremotes",
+      "rclone lsd gdrive:",
+      "crontab -l | grep -E 'backup-nightly.sh|auto-sync.sh'",
+      "ls -la /home/devuser/backups",
+      "tail -n 80 /home/devuser/backups/backup.log",
+      "tail -n 80 /home/devuser/backups/sync.log",
+    ],
+  },
 };
 
 function nowIso() {
@@ -89,12 +112,36 @@ function ageMinutesFromIso(isoValue) {
   return round((Date.now() - parsed) / (60 * 1000), 1);
 }
 
+function ageHoursFromIso(isoValue) {
+  if (!isoValue) {
+    return null;
+  }
+  const parsed = new Date(isoValue).getTime();
+  if (!Number.isFinite(parsed)) {
+    return null;
+  }
+  return round((Date.now() - parsed) / (60 * 60 * 1000), 1);
+}
+
 function sanitizeWindow(window) {
-  if (window === "7d") {
+  const normalized = String(window || "24h")
+    .trim()
+    .toLowerCase();
+
+  if (normalized === "24h" || normalized === "1d" || normalized === "day" || normalized === "daily") {
+    return { window: "24h", hours: 24 };
+  }
+  if (normalized === "7d" || normalized === "week" || normalized === "weekly") {
     return { window: "7d", hours: 24 * 7 };
   }
-  if (window === "30d") {
+  if (normalized === "30d" || normalized === "month" || normalized === "monthly") {
     return { window: "30d", hours: 24 * 30 };
+  }
+  if (normalized === "90d" || normalized === "quarter" || normalized === "quarterly") {
+    return { window: "90d", hours: 24 * 90 };
+  }
+  if (normalized === "365d" || normalized === "year" || normalized === "yearly") {
+    return { window: "365d", hours: 24 * 365 };
   }
   return { window: "24h", hours: 24 };
 }
@@ -164,6 +211,7 @@ function severityRank(value) {
 function healthRank(value) {
   const normalized = String(value || "").trim().toLowerCase();
   if (normalized === "critical") return 4;
+  if (normalized === "unknown_permission") return 3;
   if (normalized === "warning") return 3;
   if (normalized === "degraded") return 2;
   if (normalized === "unknown") return 1;
@@ -385,6 +433,178 @@ function listCronFiles() {
   return files;
 }
 
+function collectCronEntries() {
+  const scannedEntries = [];
+  const userCrontab = safeExec("crontab", ["-l"]);
+  if (userCrontab.ok && userCrontab.stdout) {
+    scannedEntries.push({
+      source: "crontab:user",
+      lines: userCrontab.stdout.split("\n"),
+    });
+  }
+
+  const files = listCronFiles();
+  for (const cronFile of files) {
+    const fileResult = readTextFileSafe(cronFile);
+    if (!fileResult.ok) {
+      continue;
+    }
+    scannedEntries.push({
+      source: cronFile,
+      lines: String(fileResult.content || "").split("\n"),
+    });
+  }
+
+  return scannedEntries;
+}
+
+function readFileTail(filePath, lineLimit = 120) {
+  const fileResult = readTextFileSafe(filePath);
+  if (!fileResult.ok) {
+    return {
+      exists: false,
+      path: filePath,
+      lines: [],
+      text: "",
+      message: fileResult.message || "file unavailable",
+      mtimeIso: null,
+      ageHours: null,
+    };
+  }
+
+  let mtimeIso = null;
+  try {
+    const stat = fs.statSync(filePath);
+    mtimeIso = stat.mtime.toISOString();
+  } catch (error) {
+    mtimeIso = null;
+  }
+
+  const lines = String(fileResult.content || "")
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean);
+  const tailLines = lines.slice(Math.max(0, lines.length - Number(lineLimit || 120)));
+
+  return {
+    exists: true,
+    path: filePath,
+    lines: tailLines,
+    text: tailLines.join("\n"),
+    message: null,
+    mtimeIso,
+    ageHours: ageHoursFromIso(mtimeIso),
+  };
+}
+
+function parseRcloneLogDiagnostics(logText) {
+  const lines = String(logText || "")
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean);
+
+  const errorLines = [];
+  const warningLines = [];
+  const successLines = [];
+  for (const line of lines) {
+    const lower = line.toLowerCase();
+    if (
+      /\b(error|failed|fatal)\b/i.test(line) ||
+      lower.includes("didn't find section in config file") ||
+      lower.includes("directory not found")
+    ) {
+      errorLines.push(line);
+      continue;
+    }
+    if (/\b(warn|warning)\b/i.test(line)) {
+      warningLines.push(line);
+      continue;
+    }
+    if (
+      /\b(copied|transferred|checks:|synced|completed|success)\b/i.test(line) ||
+      lower.includes("there was nothing to transfer")
+    ) {
+      successLines.push(line);
+    }
+  }
+
+  return {
+    lineCount: lines.length,
+    errorCount: errorLines.length,
+    warningCount: warningLines.length,
+    lastErrorLine: errorLines.length ? errorLines[errorLines.length - 1] : null,
+    lastWarningLine: warningLines.length ? warningLines[warningLines.length - 1] : null,
+    lastSuccessLine: successLines.length ? successLines[successLines.length - 1] : null,
+    recentErrors: errorLines.slice(-5),
+  };
+}
+
+function detectRcloneProfileMode({ hasNightly, hasAutosync, cronNightly, cronAutosync }) {
+  const nightlyActive = Boolean(hasNightly || cronNightly);
+  const autosyncActive = Boolean(hasAutosync || cronAutosync);
+  if (nightlyActive && autosyncActive) {
+    return "hybrid";
+  }
+  if (nightlyActive) {
+    return "nightly";
+  }
+  if (autosyncActive) {
+    return "autosync";
+  }
+  return "none";
+}
+
+function scanLatestBackupArtifact(backupDir, ignoredBaseNames = []) {
+  if (!backupDir || !fs.existsSync(backupDir)) {
+    return {
+      exists: false,
+      latestPath: null,
+      latestMtimeIso: null,
+      entryCount: 0,
+    };
+  }
+
+  let latestPath = null;
+  let latestMtime = null;
+  let entryCount = 0;
+
+  try {
+    const entries = fs.readdirSync(backupDir, { withFileTypes: true });
+    for (const entry of entries) {
+      const fullPath = path.join(backupDir, entry.name);
+      if (ignoredBaseNames.includes(entry.name)) {
+        continue;
+      }
+
+      try {
+        const stat = fs.statSync(fullPath);
+        entryCount += 1;
+        if (!latestMtime || stat.mtimeMs > latestMtime.getTime()) {
+          latestMtime = stat.mtime;
+          latestPath = fullPath;
+        }
+      } catch (error) {
+        // skip unreadable entries
+      }
+    }
+  } catch (error) {
+    return {
+      exists: true,
+      latestPath: null,
+      latestMtimeIso: null,
+      entryCount: 0,
+      message: error.message || "unable to inspect backup directory",
+    };
+  }
+
+  return {
+    exists: true,
+    latestPath,
+    latestMtimeIso: latestMtime ? latestMtime.toISOString() : null,
+    entryCount,
+  };
+}
+
 function extractLogWarnings(rawText) {
   const lines = String(rawText || "")
     .split("\n")
@@ -504,6 +724,106 @@ function pickFirstExistingPath(paths) {
   return null;
 }
 
+function getWindowBucketCount(window) {
+  if (window === "24h") return 8;
+  if (window === "7d") return 7;
+  if (window === "30d") return 10;
+  if (window === "90d") return 12;
+  if (window === "365d") return 12;
+  return 8;
+}
+
+function formatBucketLabel(timestampMs, window) {
+  const date = new Date(timestampMs);
+  if (window === "24h") {
+    return date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  }
+  if (window === "365d") {
+    return date.toLocaleDateString([], { month: "short", year: "2-digit" });
+  }
+  return date.toLocaleDateString([], { month: "short", day: "numeric" });
+}
+
+function buildEventTimeline({ events, windowConfig }) {
+  const bucketCount = getWindowBucketCount(windowConfig.window);
+  const rangeMs = windowConfig.hours * 60 * 60 * 1000;
+  const nowMs = Date.now();
+  const startMs = nowMs - rangeMs;
+  const bucketMs = Math.max(1, Math.floor(rangeMs / bucketCount));
+
+  const buckets = [];
+  for (let index = 0; index < bucketCount; index += 1) {
+    const bucketStartMs = startMs + index * bucketMs;
+    buckets.push({
+      bucketStart: new Date(bucketStartMs).toISOString(),
+      label: formatBucketLabel(bucketStartMs, windowConfig.window),
+      open: 0,
+      resolved: 0,
+      critical: 0,
+      warning: 0,
+      info: 0,
+      total: 0,
+    });
+  }
+
+  for (const event of Array.isArray(events) ? events : []) {
+    const seenAt = new Date(event.lastSeenAt || event.firstSeenAt || 0).getTime();
+    if (!Number.isFinite(seenAt) || seenAt < startMs || seenAt > nowMs) {
+      continue;
+    }
+
+    const bucketIndex = Math.min(bucketCount - 1, Math.max(0, Math.floor((seenAt - startMs) / bucketMs)));
+    const bucket = buckets[bucketIndex];
+    const status = String(event.status || "open").toLowerCase();
+    const severity = normalizeSeverity(event.severity);
+    const count = Math.max(1, Number(event.count || 1));
+
+    if (status === "resolved") {
+      bucket.resolved += count;
+    } else {
+      bucket.open += count;
+    }
+
+    if (severity === "critical") bucket.critical += count;
+    else if (severity === "warning") bucket.warning += count;
+    else bucket.info += count;
+
+    bucket.total += count;
+  }
+
+  return {
+    bucketHours: round(windowConfig.hours / bucketCount, 1),
+    points: buckets,
+    series: {
+      open: buckets.map((bucket) => bucket.open),
+      resolved: buckets.map((bucket) => bucket.resolved),
+      critical: buckets.map((bucket) => bucket.critical),
+      warning: buckets.map((bucket) => bucket.warning),
+      info: buckets.map((bucket) => bucket.info),
+      total: buckets.map((bucket) => bucket.total),
+    },
+  };
+}
+
+function buildIssueMix(events, limit = 8) {
+  const map = new Map();
+  for (const event of Array.isArray(events) ? events : []) {
+    const code = String(event.code || "UNKNOWN");
+    const severity = normalizeSeverity(event.severity);
+    const count = Math.max(1, Number(event.count || 1));
+    const existing = map.get(code) || { code, severity, count: 0 };
+    existing.count += count;
+    if (severityRank(severity) > severityRank(existing.severity)) {
+      existing.severity = severity;
+    }
+    map.set(code, existing);
+  }
+
+  return Array.from(map.values())
+    .sort((a, b) => Number(b.count || 0) - Number(a.count || 0))
+    .slice(0, Math.max(1, Number(limit || 8)));
+}
+
 function createOpsInsightService({
   env,
   repository,
@@ -518,6 +838,191 @@ function createOpsInsightService({
   const collectIntervalMs = Math.max(30, Number(env.DASHBOARD_OPS_COLLECT_INTERVAL_SECONDS || 300)) * 1000;
   const retentionDays = Number(env.DASHBOARD_OPS_RETENTION_DAYS || env.DASHBOARD_RETENTION_DAYS || 90);
   const logTailLines = Math.max(100, Number(env.DASHBOARD_OPS_LOG_TAIL_LINES || 400));
+  const rcloneTriggerEnabled = Boolean(env.DASHBOARD_RCLONE_AUTOSYNC_TRIGGER_ENABLED);
+  const rcloneTriggerCooldownSeconds = Math.max(
+    30,
+    Number(env.DASHBOARD_RCLONE_AUTOSYNC_COOLDOWN_SECONDS || RCLONE_TRIGGER_COOLDOWN_DEFAULT_SECONDS)
+  );
+  const rcloneTriggerCommand = String(
+    env.DASHBOARD_RCLONE_AUTOSYNC_SCRIPT || RCLONE_AUTOSYNC_SCRIPT_DEFAULT
+  ).trim() || RCLONE_AUTOSYNC_SCRIPT_DEFAULT;
+  const rcloneTriggerState = {
+    inFlight: false,
+    startedAt: null,
+    finishedAt: null,
+    nextAllowedAt: null,
+    lastOutcome: "idle",
+    lastError: null,
+    lastPid: null,
+    lastRequestedByIp: null,
+    lastRequestedByUser: null,
+    lastExitCode: null,
+    lastExitSignal: null,
+  };
+
+  function getRcloneTriggerStatus() {
+    const nowMs = Date.now();
+    const nextAllowedMs = rcloneTriggerState.nextAllowedAt
+      ? new Date(rcloneTriggerState.nextAllowedAt).getTime()
+      : null;
+    const retryAfterSeconds =
+      nextAllowedMs && Number.isFinite(nextAllowedMs) && nextAllowedMs > nowMs
+        ? Math.max(0, Math.ceil((nextAllowedMs - nowMs) / 1000))
+        : 0;
+
+    return {
+      enabled: rcloneTriggerEnabled,
+      commandPath: rcloneTriggerCommand,
+      cooldownSeconds: rcloneTriggerCooldownSeconds,
+      inFlight: rcloneTriggerState.inFlight,
+      startedAt: rcloneTriggerState.startedAt,
+      finishedAt: rcloneTriggerState.finishedAt,
+      nextAllowedAt: rcloneTriggerState.nextAllowedAt,
+      retryAfterSeconds,
+      lastOutcome: rcloneTriggerState.lastOutcome,
+      lastError: rcloneTriggerState.lastError,
+      lastPid: rcloneTriggerState.lastPid,
+      lastRequestedByIp: rcloneTriggerState.lastRequestedByIp,
+      lastRequestedByUser: rcloneTriggerState.lastRequestedByUser,
+      lastExitCode: rcloneTriggerState.lastExitCode,
+      lastExitSignal: rcloneTriggerState.lastExitSignal,
+    };
+  }
+
+  async function triggerRcloneSync({
+    requestedByIp = null,
+    dashboardUser = null,
+  } = {}) {
+    if (!rcloneTriggerEnabled) {
+      return {
+        ok: false,
+        accepted: false,
+        code: "RCLONE_TRIGGER_DISABLED",
+        message: "Rclone trigger is disabled by environment policy.",
+        trigger: getRcloneTriggerStatus(),
+      };
+    }
+
+    const triggerStatus = getRcloneTriggerStatus();
+    if (triggerStatus.inFlight) {
+      return {
+        ok: false,
+        accepted: false,
+        code: "RCLONE_TRIGGER_IN_PROGRESS",
+        message: "An rclone auto-sync trigger is already running.",
+        retryAfterSeconds: Math.max(1, Number(triggerStatus.retryAfterSeconds || 1)),
+        trigger: triggerStatus,
+      };
+    }
+
+    if (Number(triggerStatus.retryAfterSeconds || 0) > 0) {
+      return {
+        ok: false,
+        accepted: false,
+        code: "RCLONE_TRIGGER_COOLDOWN_ACTIVE",
+        message: `Rclone auto-sync trigger is on cooldown for ${triggerStatus.retryAfterSeconds}s.`,
+        retryAfterSeconds: triggerStatus.retryAfterSeconds,
+        trigger: triggerStatus,
+      };
+    }
+
+    if (!fs.existsSync(rcloneTriggerCommand)) {
+      rcloneTriggerState.lastOutcome = "failed";
+      rcloneTriggerState.lastError = `Auto-sync script not found at ${rcloneTriggerCommand}.`;
+      rcloneTriggerState.finishedAt = nowIso();
+      rcloneTriggerState.lastPid = null;
+      rcloneTriggerState.lastExitCode = null;
+      rcloneTriggerState.lastExitSignal = null;
+      return {
+        ok: false,
+        accepted: false,
+        code: "RCLONE_TRIGGER_SCRIPT_MISSING",
+        message: rcloneTriggerState.lastError,
+        trigger: getRcloneTriggerStatus(),
+      };
+    }
+
+    try {
+      const child = spawn("bash", [rcloneTriggerCommand], {
+        detached: true,
+        stdio: "ignore",
+      });
+
+      const startedAt = nowIso();
+      rcloneTriggerState.inFlight = true;
+      rcloneTriggerState.startedAt = startedAt;
+      rcloneTriggerState.finishedAt = null;
+      rcloneTriggerState.nextAllowedAt = new Date(
+        Date.now() + rcloneTriggerCooldownSeconds * 1000
+      ).toISOString();
+      rcloneTriggerState.lastOutcome = "started";
+      rcloneTriggerState.lastError = null;
+      rcloneTriggerState.lastPid = Number.isFinite(Number(child.pid)) ? Number(child.pid) : null;
+      rcloneTriggerState.lastRequestedByIp = requestedByIp || null;
+      rcloneTriggerState.lastRequestedByUser = dashboardUser || null;
+      rcloneTriggerState.lastExitCode = null;
+      rcloneTriggerState.lastExitSignal = null;
+
+      child.on("exit", (code, signal) => {
+        rcloneTriggerState.inFlight = false;
+        rcloneTriggerState.finishedAt = nowIso();
+        rcloneTriggerState.lastExitCode = code == null ? null : Number(code);
+        rcloneTriggerState.lastExitSignal = signal || null;
+        if (code === 0) {
+          rcloneTriggerState.lastOutcome = "success";
+          rcloneTriggerState.lastError = null;
+        } else {
+          rcloneTriggerState.lastOutcome = "failed";
+          rcloneTriggerState.lastError = `Auto-sync exited with code ${fmtExitCode(code, signal)}.`;
+        }
+      });
+
+      child.on("error", (error) => {
+        rcloneTriggerState.inFlight = false;
+        rcloneTriggerState.finishedAt = nowIso();
+        rcloneTriggerState.lastOutcome = "failed";
+        rcloneTriggerState.lastError = error?.message || "Failed to launch auto-sync trigger.";
+      });
+
+      child.unref();
+
+      return {
+        ok: true,
+        accepted: true,
+        code: "RCLONE_TRIGGER_ACCEPTED",
+        message: `Auto-sync trigger started using ${rcloneTriggerCommand}.`,
+        trigger: getRcloneTriggerStatus(),
+      };
+    } catch (error) {
+      rcloneTriggerState.inFlight = false;
+      rcloneTriggerState.finishedAt = nowIso();
+      rcloneTriggerState.lastOutcome = "failed";
+      rcloneTriggerState.lastError = error?.message || "Failed to launch auto-sync trigger.";
+      rcloneTriggerState.lastPid = null;
+      rcloneTriggerState.lastExitCode = null;
+      rcloneTriggerState.lastExitSignal = null;
+      return {
+        ok: false,
+        accepted: false,
+        code: "RCLONE_TRIGGER_FAILED",
+        message: rcloneTriggerState.lastError,
+        trigger: getRcloneTriggerStatus(),
+      };
+    }
+  }
+
+  function fmtExitCode(code, signal) {
+    if (code == null && signal) {
+      return `signal ${signal}`;
+    }
+    if (code == null) {
+      return "unknown";
+    }
+    if (signal) {
+      return `${code} (${signal})`;
+    }
+    return String(code);
+  }
 
   function getFreshnessSeconds() {
     if (!lastCollectedAt) {
@@ -548,6 +1053,9 @@ function createOpsInsightService({
     }
     if (controlKey === "crontab") {
       return combineHealth(controls.cron?.health, controls.logwatch?.health);
+    }
+    if (controlKey === "rclone") {
+      return controls.rclone?.health || "unknown";
     }
     return "unknown";
   }
@@ -587,6 +1095,12 @@ function createOpsInsightService({
         cron: controls.cron || {},
         logwatch: controls.logwatch || {},
         cronRuntime: snapshot?.cronRuntime || {},
+      };
+    }
+
+    if (controlKey === "rclone") {
+      return {
+        rclone: controls.rclone || {},
       };
     }
 
@@ -660,28 +1174,9 @@ function createOpsInsightService({
   }
 
   async function collectCronRuntime() {
-    const scannedEntries = [];
+    const scannedEntries = collectCronEntries();
     const staleReferences = [];
     const expectedReferences = [];
-
-    const userCrontab = safeExec("crontab", ["-l"]);
-    if (userCrontab.ok && userCrontab.stdout) {
-      scannedEntries.push({
-        source: "crontab:user",
-        lines: userCrontab.stdout.split("\n"),
-      });
-    }
-
-    const files = listCronFiles();
-    for (const cronFile of files) {
-      const fileResult = readTextFileSafe(cronFile);
-      if (fileResult.ok) {
-        scannedEntries.push({
-          source: cronFile,
-          lines: String(fileResult.content || "").split("\n"),
-        });
-      }
-    }
 
     for (const entry of scannedEntries) {
       const lines = Array.isArray(entry.lines) ? entry.lines : [];
@@ -813,12 +1308,44 @@ function createOpsInsightService({
     };
   }
 
-  async function collectAideState() {
-    const baselinePath = pickFirstExistingPath([
+  async function collectAideState({ liveProbe = false } = {}) {
+    const baselineCandidates = [
       "/var/lib/aide/aide.db",
       "/var/lib/aide/aide.db.gz",
       "/var/lib/aide/aide.db.new",
-    ]);
+    ];
+
+    let baselinePath = pickFirstExistingPath(baselineCandidates);
+    let evidenceSource = "filesystem";
+    let confidence = baselinePath ? "high" : "medium";
+    let permissionLimited = false;
+    let probeMessage = null;
+    let probeCommand = null;
+
+    if (!baselinePath) {
+      const sudoProbe = safeExec("sudo", ["ls", "-1", "/var/lib/aide"], 2600);
+      probeCommand = "sudo ls -1 /var/lib/aide";
+      if (sudoProbe.ok) {
+        const match = String(sudoProbe.stdout || "")
+          .split("\n")
+          .map((line) => line.trim())
+          .find((line) => /^aide\.db(\.gz|\.new)?$/i.test(line));
+        if (match) {
+          baselinePath = path.posix.join("/var/lib/aide", match);
+          evidenceSource = "sudo_probe";
+          confidence = "medium";
+        } else {
+          evidenceSource = "sudo_probe";
+          confidence = "high";
+        }
+      } else {
+        const probeError = `${sudoProbe.stderr || ""} ${sudoProbe.message || ""}`.trim();
+        permissionLimited = /password|sudoers|not allowed|permission denied/i.test(probeError);
+        evidenceSource = permissionLimited ? "permission_limited" : "probe_failed";
+        confidence = "low";
+        probeMessage = probeError || "Unable to run sudo probe for AIDE baseline path.";
+      }
+    }
 
     const lastCheckPath = pickFirstExistingPath([
       "/var/log/aide/aide.log",
@@ -837,7 +1364,12 @@ function createOpsInsightService({
     }
 
     const baselinePresent = Boolean(baselinePath);
-    const health = baselinePresent ? "healthy" : "warning";
+    const health = baselinePresent ? "healthy" : permissionLimited ? "unknown_permission" : "warning";
+    const message = baselinePresent
+      ? `AIDE baseline present at ${baselinePath}.`
+      : permissionLimited
+        ? "AIDE baseline could not be verified due to permission limits."
+        : "AIDE baseline database is missing.";
 
     return {
       health,
@@ -846,9 +1378,16 @@ function createOpsInsightService({
       lastCheckPath: lastCheckPath || null,
       lastCheckAt,
       lastCheckAgeMinutes: ageMinutesFromIso(lastCheckAt),
-      message: baselinePresent
-        ? `AIDE baseline present at ${baselinePath}.`
-        : "AIDE baseline database is missing.",
+      message,
+      evidenceSource,
+      confidence,
+      permissionLimited,
+      liveProbe: Boolean(liveProbe),
+      liveCheckedAt: nowIso(),
+      probe: {
+        command: probeCommand,
+        message: probeMessage,
+      },
     };
   }
 
@@ -885,6 +1424,266 @@ function createOpsInsightService({
     }
   }
 
+  async function collectRcloneRuntime() {
+    const remoteName = String(env.DASHBOARD_RCLONE_REMOTE || RCLONE_REMOTE_DEFAULT).trim() || RCLONE_REMOTE_DEFAULT;
+    const target = String(env.DASHBOARD_RCLONE_TARGET || RCLONE_TARGET_DEFAULT).trim() || RCLONE_TARGET_DEFAULT;
+    const backupDir = String(env.DASHBOARD_RCLONE_BACKUP_DIR || RCLONE_BACKUP_DIR_DEFAULT).trim() || RCLONE_BACKUP_DIR_DEFAULT;
+    const backupScriptPath =
+      String(env.DASHBOARD_RCLONE_BACKUP_SCRIPT || RCLONE_BACKUP_SCRIPT_DEFAULT).trim() || RCLONE_BACKUP_SCRIPT_DEFAULT;
+    const autosyncScriptPath =
+      String(env.DASHBOARD_RCLONE_AUTOSYNC_SCRIPT || RCLONE_AUTOSYNC_SCRIPT_DEFAULT).trim() || RCLONE_AUTOSYNC_SCRIPT_DEFAULT;
+    const backupLogPath =
+      String(env.DASHBOARD_RCLONE_BACKUP_LOG || RCLONE_BACKUP_LOG_DEFAULT).trim() || RCLONE_BACKUP_LOG_DEFAULT;
+    const syncLogPath =
+      String(env.DASHBOARD_RCLONE_SYNC_LOG || RCLONE_SYNC_LOG_DEFAULT).trim() || RCLONE_SYNC_LOG_DEFAULT;
+    const configPath =
+      String(env.DASHBOARD_RCLONE_CONFIG_PATH || RCLONE_CONFIG_PATH_DEFAULT).trim() || RCLONE_CONFIG_PATH_DEFAULT;
+    const staleHours = Math.max(1, Number(env.DASHBOARD_RCLONE_STALE_HOURS || 24));
+
+    const rcloneVersionResult = safeExec("rclone", ["version"], 3000);
+    const binaryAvailable = rcloneVersionResult.ok;
+    const versionLine = binaryAvailable ? String(rcloneVersionResult.stdout || "").split("\n")[0] || "available" : null;
+    const binaryHealth = binaryAvailable ? "healthy" : "critical";
+
+    const listRemotesResult = binaryAvailable
+      ? safeExec("rclone", ["listremotes"], 2800)
+      : { ok: false, stdout: "", stderr: "", message: "rclone unavailable", code: "RCLONE_MISSING" };
+
+    const remotes = listRemotesResult.ok
+      ? String(listRemotesResult.stdout || "")
+          .split("\n")
+          .map((line) => line.trim())
+          .filter(Boolean)
+      : [];
+
+    const normalizedRemotes = remotes.map((remote) => String(remote).replace(/:$/, "").trim());
+    const remoteConfigured = normalizedRemotes.includes(remoteName);
+    const remoteProbeResult = binaryAvailable && remoteConfigured
+      ? safeExec("rclone", ["lsd", `${remoteName}:`], 3500)
+      : { ok: false, stdout: "", stderr: "", message: "remote probe skipped", code: "REMOTE_PROBE_SKIPPED" };
+    const remoteReachable = Boolean(remoteProbeResult.ok);
+
+    const configExists = fs.existsSync(configPath);
+    const configHealth = configExists ? "healthy" : "warning";
+
+    const remoteHealth = !binaryAvailable
+      ? "critical"
+      : !remoteConfigured
+        ? "warning"
+        : remoteReachable
+          ? "healthy"
+          : "critical";
+
+    const nightlyScript = {
+      path: backupScriptPath,
+      exists: fs.existsSync(backupScriptPath),
+    };
+    const autosyncScript = {
+      path: autosyncScriptPath,
+      exists: fs.existsSync(autosyncScriptPath),
+    };
+
+    const cronEntries = collectCronEntries();
+    const nightlyReferences = [];
+    const autosyncReferences = [];
+    const brokenReferences = [];
+
+    for (const entry of cronEntries) {
+      const lines = Array.isArray(entry.lines) ? entry.lines : [];
+      for (let index = 0; index < lines.length; index += 1) {
+        const line = String(lines[index] || "");
+        const trimmed = line.trim();
+        if (!trimmed || trimmed.startsWith("#")) {
+          continue;
+        }
+
+        if (trimmed.includes("backup-nightly.sh")) {
+          if (trimmed.includes(backupScriptPath)) {
+            nightlyReferences.push({ source: entry.source, line: index + 1, snippet: trimmed });
+          } else {
+            brokenReferences.push({
+              source: entry.source,
+              line: index + 1,
+              snippet: trimmed,
+              expectedPath: backupScriptPath,
+            });
+          }
+        }
+
+        if (trimmed.includes("auto-sync.sh")) {
+          if (trimmed.includes(autosyncScriptPath)) {
+            autosyncReferences.push({ source: entry.source, line: index + 1, snippet: trimmed });
+          } else {
+            brokenReferences.push({
+              source: entry.source,
+              line: index + 1,
+              snippet: trimmed,
+              expectedPath: autosyncScriptPath,
+            });
+          }
+        }
+      }
+    }
+
+    const profileMode = detectRcloneProfileMode({
+      hasNightly: nightlyScript.exists,
+      hasAutosync: autosyncScript.exists,
+      cronNightly: nightlyReferences.length > 0,
+      cronAutosync: autosyncReferences.length > 0,
+    });
+
+    const cronHealth =
+      brokenReferences.length > 0
+        ? "warning"
+        : nightlyReferences.length > 0 || autosyncReferences.length > 0
+          ? "healthy"
+          : "warning";
+
+    const scriptsHealth =
+      !nightlyScript.exists && !autosyncScript.exists
+        ? "critical"
+        : nightlyScript.exists && autosyncScript.exists
+          ? "healthy"
+          : "warning";
+
+    const backupLogTail = readFileTail(backupLogPath, 200);
+    const syncLogTail = readFileTail(syncLogPath, 200);
+    const backupLogDiagnostics = parseRcloneLogDiagnostics(backupLogTail.text);
+    const syncLogDiagnostics = parseRcloneLogDiagnostics(syncLogTail.text);
+
+    const backupLogHealth = !backupLogTail.exists
+      ? "warning"
+      : backupLogDiagnostics.errorCount > 0
+        ? "warning"
+        : "healthy";
+
+    const syncLogHealth = !syncLogTail.exists
+      ? "warning"
+      : syncLogDiagnostics.errorCount > 0
+        ? "warning"
+        : "healthy";
+
+    const artifactScan = scanLatestBackupArtifact(backupDir, [
+      path.basename(backupLogPath),
+      path.basename(syncLogPath),
+    ]);
+    const latestArtifactAgeHours = ageHoursFromIso(artifactScan.latestMtimeIso);
+    const artifactHealth = !artifactScan.exists
+      ? "warning"
+      : artifactScan.entryCount === 0
+        ? "warning"
+        : latestArtifactAgeHours == null
+          ? "warning"
+          : latestArtifactAgeHours > staleHours * 2
+            ? "critical"
+            : latestArtifactAgeHours > staleHours
+              ? "warning"
+              : "healthy";
+
+    const logsHealth = combineHealth(backupLogHealth, syncLogHealth);
+    const health = combineHealth(binaryHealth, configHealth, remoteHealth, scriptsHealth, cronHealth, artifactHealth, logsHealth);
+
+    const scriptCoverage =
+      profileMode === "hybrid"
+        ? "nightly + auto-sync"
+        : profileMode === "nightly"
+          ? "nightly only"
+          : profileMode === "autosync"
+            ? "auto-sync only"
+            : "none";
+
+    return {
+      health,
+      mode: "monitor-only",
+      profileMode,
+      scriptCoverage,
+      remoteName,
+      target,
+      staleHours,
+      binary: {
+        available: binaryAvailable,
+        health: binaryHealth,
+        version: versionLine,
+        message: binaryAvailable
+          ? "rclone binary available."
+          : rcloneVersionResult.stderr || rcloneVersionResult.message || "rclone binary not found.",
+      },
+      config: {
+        path: configPath,
+        exists: configExists,
+        health: configHealth,
+      },
+      remote: {
+        name: remoteName,
+        target,
+        remotes,
+        configured: remoteConfigured,
+        reachable: remoteReachable,
+        health: remoteHealth,
+        listRemotesOk: Boolean(listRemotesResult.ok),
+        listRemotesError: listRemotesResult.ok
+          ? null
+          : listRemotesResult.stderr || listRemotesResult.message || "rclone listremotes failed.",
+        probeError: remoteProbeResult.ok
+          ? null
+          : remoteProbeResult.stderr || remoteProbeResult.message || "rclone remote connectivity probe failed.",
+      },
+      scripts: {
+        health: scriptsHealth,
+        nightly: nightlyScript,
+        autosync: autosyncScript,
+      },
+      cron: {
+        health: cronHealth,
+        nightlyReferences: nightlyReferences.length,
+        autosyncReferences: autosyncReferences.length,
+        brokenReferences: brokenReferences.length,
+        scannedSources: cronEntries.map((entry) => entry.source),
+        references: {
+          nightly: nightlyReferences,
+          autosync: autosyncReferences,
+          broken: brokenReferences,
+        },
+      },
+      trigger: getRcloneTriggerStatus(),
+      artifacts: {
+        health: artifactHealth,
+        backupDir,
+        exists: artifactScan.exists,
+        backupCount: artifactScan.entryCount,
+        latestArtifactPath: artifactScan.latestPath,
+        latestArtifactAt: artifactScan.latestMtimeIso,
+        latestArtifactAgeHours,
+        staleThresholdHours: staleHours,
+        backupLog: {
+          path: backupLogPath,
+          exists: backupLogTail.exists,
+          lastUpdatedAt: backupLogTail.mtimeIso,
+          ageHours: backupLogTail.ageHours,
+          health: backupLogHealth,
+          errorCount: backupLogDiagnostics.errorCount,
+          warningCount: backupLogDiagnostics.warningCount,
+          lastErrorLine: backupLogDiagnostics.lastErrorLine,
+          lastSuccessLine: backupLogDiagnostics.lastSuccessLine,
+          recentErrors: backupLogDiagnostics.recentErrors,
+        },
+        syncLog: {
+          path: syncLogPath,
+          exists: syncLogTail.exists,
+          lastUpdatedAt: syncLogTail.mtimeIso,
+          ageHours: syncLogTail.ageHours,
+          health: syncLogHealth,
+          errorCount: syncLogDiagnostics.errorCount,
+          warningCount: syncLogDiagnostics.warningCount,
+          lastErrorLine: syncLogDiagnostics.lastErrorLine,
+          lastSuccessLine: syncLogDiagnostics.lastSuccessLine,
+          recentErrors: syncLogDiagnostics.recentErrors,
+        },
+      },
+      message: `Rclone ${binaryAvailable ? "available" : "missing"} | remote ${remoteConfigured ? "configured" : "missing"} | profile ${scriptCoverage}`,
+    };
+  }
+
   function buildOpsEvents({
     postfixConfig,
     postfixRuntime,
@@ -893,6 +1692,7 @@ function createOpsInsightService({
     fail2ban,
     aide,
     relayState,
+    rcloneRuntime,
   }) {
     const events = [];
 
@@ -1046,7 +1846,7 @@ function createOpsInsightService({
       );
     }
 
-    if (!aide.baselinePresent) {
+    if (!aide.baselinePresent && !aide.permissionLimited) {
       events.push(
         makeOpsEvent({
           source: "aide",
@@ -1059,6 +1859,199 @@ function createOpsInsightService({
             baselinePath: aide.baselinePath,
           },
           fingerprintSeed: "aide-baseline-missing",
+        })
+      );
+    }
+
+    if (!aide.baselinePresent && aide.permissionLimited) {
+      events.push(
+        makeOpsEvent({
+          source: "aide",
+          severity: "warning",
+          code: "AIDE_BASELINE_UNVERIFIED",
+          title: "AIDE baseline verification requires elevated access",
+          message: "AIDE baseline could not be verified with current collector permissions.",
+          rawSnippet: aide.probe?.message || null,
+          metadata: {
+            evidenceSource: aide.evidenceSource,
+            probeCommand: aide.probe?.command || null,
+          },
+          fingerprintSeed: "aide-baseline-unverified",
+        })
+      );
+    }
+
+    if (!rcloneRuntime.binary.available) {
+      events.push(
+        makeOpsEvent({
+          source: "rclone",
+          severity: "critical",
+          code: "RCLONE_BINARY_MISSING",
+          title: "Rclone binary missing",
+          message: "rclone command is not available on host.",
+          rawSnippet: rcloneRuntime.binary.message,
+          fingerprintSeed: "rclone-binary-missing",
+        })
+      );
+    }
+
+    if (!rcloneRuntime.config.exists) {
+      events.push(
+        makeOpsEvent({
+          source: "rclone",
+          severity: "warning",
+          code: "RCLONE_CONFIG_MISSING",
+          title: "Rclone config file missing",
+          message: `rclone config file not found at ${rcloneRuntime.config.path}.`,
+          fingerprintSeed: "rclone-config-missing",
+        })
+      );
+    }
+
+    if (!rcloneRuntime.remote.configured) {
+      events.push(
+        makeOpsEvent({
+          source: "rclone",
+          severity: "critical",
+          code: "RCLONE_REMOTE_MISSING",
+          title: "Rclone remote missing",
+          message: `Expected remote "${rcloneRuntime.remote.name}" is not configured.`,
+          rawSnippet: rcloneRuntime.remote.listRemotesError || null,
+          metadata: {
+            remoteName: rcloneRuntime.remote.name,
+            remotes: rcloneRuntime.remote.remotes,
+          },
+          fingerprintSeed: "rclone-remote-missing",
+        })
+      );
+    } else if (!rcloneRuntime.remote.reachable) {
+      events.push(
+        makeOpsEvent({
+          source: "rclone",
+          severity: "critical",
+          code: "RCLONE_REMOTE_UNREACHABLE",
+          title: "Rclone remote unreachable",
+          message: `Remote "${rcloneRuntime.remote.name}" connectivity probe failed.`,
+          rawSnippet: rcloneRuntime.remote.probeError || null,
+          fingerprintSeed: "rclone-remote-unreachable",
+        })
+      );
+    }
+
+    if (rcloneRuntime.scripts.nightly.exists === false) {
+      events.push(
+        makeOpsEvent({
+          source: "rclone",
+          severity: "warning",
+          code: "RCLONE_NIGHTLY_SCRIPT_MISSING",
+          title: "Nightly backup script missing",
+          message: `Expected nightly script not found at ${rcloneRuntime.scripts.nightly.path}.`,
+          fingerprintSeed: "rclone-nightly-script-missing",
+        })
+      );
+    }
+
+    if (rcloneRuntime.scripts.autosync.exists === false) {
+      events.push(
+        makeOpsEvent({
+          source: "rclone",
+          severity: "warning",
+          code: "RCLONE_AUTOSYNC_SCRIPT_MISSING",
+          title: "Auto-sync script missing",
+          message: `Expected auto-sync script not found at ${rcloneRuntime.scripts.autosync.path}.`,
+          fingerprintSeed: "rclone-autosync-script-missing",
+        })
+      );
+    }
+
+    if (
+      Number(rcloneRuntime.cron.nightlyReferences || 0) <= 0 &&
+      Number(rcloneRuntime.cron.autosyncReferences || 0) <= 0
+    ) {
+      events.push(
+        makeOpsEvent({
+          source: "rclone",
+          severity: "warning",
+          code: "RCLONE_CRON_MISSING",
+          title: "No rclone cron schedule detected",
+          message: "Neither nightly nor auto-sync rclone scripts appear in visible cron sources.",
+          metadata: {
+            scannedSources: rcloneRuntime.cron.scannedSources,
+          },
+          fingerprintSeed: "rclone-cron-missing",
+        })
+      );
+    }
+
+    if (Number(rcloneRuntime.cron.brokenReferences || 0) > 0) {
+      events.push(
+        makeOpsEvent({
+          source: "rclone",
+          severity: "warning",
+          code: "RCLONE_CRON_BROKEN_PATH",
+          title: "Rclone cron references broken script path",
+          message: `Detected ${rcloneRuntime.cron.brokenReferences} rclone cron line(s) with unexpected script path.`,
+          rawSnippet: rcloneRuntime.cron.references?.broken?.[0]?.snippet || null,
+          metadata: {
+            references: rcloneRuntime.cron.references?.broken || [],
+          },
+          fingerprintSeed: "rclone-cron-broken-path",
+        })
+      );
+    }
+
+    if (!rcloneRuntime.artifacts.exists || Number(rcloneRuntime.artifacts.backupCount || 0) <= 0) {
+      events.push(
+        makeOpsEvent({
+          source: "rclone",
+          severity: "warning",
+          code: "RCLONE_BACKUP_ARTIFACTS_MISSING",
+          title: "Backup artifacts missing",
+          message: `No backup artifacts detected in ${rcloneRuntime.artifacts.backupDir}.`,
+          fingerprintSeed: "rclone-artifacts-missing",
+        })
+      );
+    } else if (Number(rcloneRuntime.artifacts.latestArtifactAgeHours || 0) > Number(rcloneRuntime.staleHours || 24)) {
+      events.push(
+        makeOpsEvent({
+          source: "rclone",
+          severity:
+            Number(rcloneRuntime.artifacts.latestArtifactAgeHours || 0) > Number(rcloneRuntime.staleHours || 24) * 2
+              ? "critical"
+              : "warning",
+          code: "RCLONE_BACKUP_STALE",
+          title: "Backup artifacts are stale",
+          message: `Latest backup artifact age is ${String(rcloneRuntime.artifacts.latestArtifactAgeHours || "?")} hour(s).`,
+          rawSnippet: rcloneRuntime.artifacts.latestArtifactPath || null,
+          fingerprintSeed: "rclone-backup-stale",
+        })
+      );
+    }
+
+    if (Number(rcloneRuntime.artifacts.backupLog.errorCount || 0) > 0) {
+      events.push(
+        makeOpsEvent({
+          source: "rclone",
+          severity: "warning",
+          code: "RCLONE_BACKUP_LOG_ERRORS",
+          title: "Backup log reports rclone errors",
+          message: `Backup log contains ${rcloneRuntime.artifacts.backupLog.errorCount} error line(s).`,
+          rawSnippet: rcloneRuntime.artifacts.backupLog.lastErrorLine || null,
+          fingerprintSeed: "rclone-backup-log-errors",
+        })
+      );
+    }
+
+    if (Number(rcloneRuntime.artifacts.syncLog.errorCount || 0) > 0) {
+      events.push(
+        makeOpsEvent({
+          source: "rclone",
+          severity: "warning",
+          code: "RCLONE_SYNC_LOG_ERRORS",
+          title: "Auto-sync log reports rclone errors",
+          message: `Sync log contains ${rcloneRuntime.artifacts.syncLog.errorCount} error line(s).`,
+          rawSnippet: rcloneRuntime.artifacts.syncLog.lastErrorLine || null,
+          fingerprintSeed: "rclone-sync-log-errors",
         })
       );
     }
@@ -1097,7 +2090,17 @@ function createOpsInsightService({
 
     inFlight = (async () => {
       const collectedAt = nowIso();
-      const [postfixConfig, postfixRuntime, cronRuntime, logWarnings, fail2ban, aide, relayState, securitySignals] =
+      const [
+        postfixConfig,
+        postfixRuntime,
+        cronRuntime,
+        logWarnings,
+        fail2ban,
+        aide,
+        relayState,
+        rcloneRuntime,
+        securitySignals,
+      ] =
         await Promise.all([
           collectPostfixConfigIssues(),
           collectPostfixRuntime(),
@@ -1106,6 +2109,7 @@ function createOpsInsightService({
           collectFail2banState(),
           collectAideState(),
           collectRelayState(),
+          collectRcloneRuntime(),
           alertService.getSecuritySignals().catch(() => null),
         ]);
 
@@ -1117,6 +2121,7 @@ function createOpsInsightService({
         fail2ban,
         aide,
         relayState,
+        rcloneRuntime,
       });
 
       await persistOpsEvents(events);
@@ -1135,7 +2140,8 @@ function createOpsInsightService({
         logWarnings.health,
         fail2ban.health,
         aide.health,
-        relayState.health
+        relayState.health,
+        rcloneRuntime.health
       );
 
       lastCollectedAt = collectedAt;
@@ -1162,6 +2168,7 @@ function createOpsInsightService({
             warningCount: logWarnings.warningCount,
             summary: logWarnings.summary,
           },
+          rclone: rcloneRuntime,
         },
         mailRuntime: {
           relay: relayState.relay,
@@ -1396,6 +2403,27 @@ function createOpsInsightService({
       cronSchedulerStatus: snapshot.controls.cron.schedulerStatus,
       cronMetricsJobStatus: snapshot.controls.cron.metricsJob,
       postfixConfigWarnings: snapshot.controls.postfix.config.issues || [],
+      rcloneRuntimeStatus: snapshot.controls.rclone || {},
+    };
+  }
+
+  async function getAideLiveState() {
+    const snapshot = await ensureSnapshotFresh();
+    const live = await collectAideState({ liveProbe: true });
+    const snapshotAide = snapshot?.controls?.aide || null;
+    const matchesSnapshot = Boolean(
+      snapshotAide &&
+        snapshotAide.health === live.health &&
+        Boolean(snapshotAide.baselinePresent) === Boolean(live.baselinePresent)
+    );
+
+    return {
+      ok: true,
+      timestamp: nowIso(),
+      snapshotTimestamp: snapshot?.timestamp || null,
+      snapshotAide,
+      liveAide: live,
+      matchesSnapshot,
     };
   }
 
@@ -1420,9 +2448,11 @@ function createOpsInsightService({
     getOperationsControlSnapshot,
     listOpsEvents,
     triggerRecheck,
+    triggerRcloneSync,
     getMailDiagnostics,
     getSecurityDiagnostics,
     getProgramDiagnostics,
+    getAideLiveState,
     cleanupRetention,
     status,
   };
@@ -1436,6 +2466,8 @@ module.exports = {
     makeOpsEvent,
     normalizeSeverity,
     summarizeLogWarnings,
+    parseRcloneLogDiagnostics,
+    detectRcloneProfileMode,
     sanitizeControl,
   },
 };

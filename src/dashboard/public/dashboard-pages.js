@@ -6,6 +6,7 @@ const PAGE_MODULE_MAP = {
   "operations-relay": "/dashboard/assets/dashboard-page-operations.js",
   "operations-postfix": "/dashboard/assets/dashboard-page-operations.js",
   "operations-crontab": "/dashboard/assets/dashboard-page-operations.js",
+  "operations-rclone": "/dashboard/assets/dashboard-page-operations.js",
 };
 
 function resolvePageType() {

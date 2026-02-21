@@ -74,7 +74,7 @@ function createApp({
       };
     },
     async getOperationsControlSnapshot({ control } = {}) {
-      const validControls = new Set(["aide", "fail2ban", "relay", "postfix", "crontab"]);
+      const validControls = new Set(["aide", "fail2ban", "relay", "postfix", "crontab", "rclone"]);
       const controlKey = String(control || "").trim().toLowerCase();
       if (!validControls.has(controlKey)) {
         const error = new Error(
@@ -105,8 +105,46 @@ function createApp({
         fixHints: [],
       };
     },
+    async getAideLiveState() {
+      const timestamp = new Date().toISOString();
+      return {
+        ok: true,
+        timestamp,
+        snapshotTimestamp: timestamp,
+        liveAide: {
+          health: "unknown",
+          baselinePresent: false,
+          baselinePath: null,
+          message: "AIDE live verifier is not configured.",
+          evidenceSource: "fallback",
+          confidence: "low",
+          permissionLimited: true,
+          liveCheckedAt: timestamp,
+          probe: {
+            command: "sudo ls -1 /var/lib/aide",
+            ok: false,
+            code: "AIDE_CHECKER_NOT_CONFIGURED",
+            message: "AIDE live verifier is not configured.",
+          },
+        },
+        snapshotAide: {
+          health: "unknown",
+          baselinePresent: false,
+          baselinePath: null,
+          message: "AIDE snapshot is unavailable.",
+        },
+        matchesSnapshot: true,
+      };
+    },
     async listOpsEvents() {
       return [];
+    },
+    async triggerRcloneSync() {
+      return {
+        ok: false,
+        code: "RCLONE_TRIGGER_DISABLED",
+        message: "Rclone trigger service is not configured.",
+      };
     },
     async triggerRecheck() {
       return {
@@ -184,6 +222,36 @@ function createApp({
     },
     async sendManual() {
       return { ok: false, error: "HEALTH_CHECK_NOT_CONFIGURED" };
+    },
+  },
+  opsCommandService = {
+    async getCommands() {
+      return {
+        ok: true,
+        enabled: false,
+        mode: "disabled",
+        generatedAt: new Date().toISOString(),
+        control: "aide",
+        timeoutSeconds: 0,
+        cooldownSeconds: 0,
+        maxOutputLines: 0,
+        commands: [],
+      };
+    },
+    async runCommand() {
+      const error = new Error("Ops command runner is not configured.");
+      error.code = "COMMAND_RUNNER_DISABLED";
+      error.statusCode = 403;
+      throw error;
+    },
+    async getRun() {
+      const error = new Error("Run not found.");
+      error.code = "RUN_NOT_FOUND";
+      error.statusCode = 404;
+      throw error;
+    },
+    subscribeRun() {
+      return () => {};
     },
   },
 }) {
@@ -271,6 +339,7 @@ function createApp({
       activityCheckerService,
       otpAuthService,
       healthCheckService,
+      opsCommandService,
       sessionManager,
       preAuthManager,
       loginRateLimiter,

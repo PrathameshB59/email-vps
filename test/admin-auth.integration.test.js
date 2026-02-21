@@ -53,6 +53,7 @@ test("single dashboard auth, allowlist, and protected APIs", async () => {
     repository: core.repository,
     dashboardService: core.dashboardService,
     opsInsightService: core.opsInsightService,
+    opsCommandService: core.opsCommandService,
     programCheckerService: core.programCheckerService,
     mailCheckerService: core.mailCheckerService,
     activityCheckerService: core.activityCheckerService,
@@ -111,6 +112,7 @@ test("single dashboard auth, allowlist, and protected APIs", async () => {
       "/dashboard/operations/relay",
       "/dashboard/operations/postfix",
       "/dashboard/operations/crontab",
+      "/dashboard/operations/rclone",
       "/dashboard/mail",
     ];
 
@@ -170,11 +172,37 @@ test("single dashboard auth, allowlist, and protected APIs", async () => {
     assert.equal(operationsControl.body.control, "postfix");
     assert.equal(Array.isArray(operationsControl.body.topOpenIssues), true);
 
+    const operationsControlRclone = await agent.get("/api/v1/dashboard/operations/control/rclone?window=24h");
+    assert.equal(operationsControlRclone.status, 200);
+    assert.equal(operationsControlRclone.body.control, "rclone");
+    assert.equal(Array.isArray(operationsControlRclone.body.topOpenIssues), true);
+
     const operationsControlInvalid = await agent.get(
       "/api/v1/dashboard/operations/control/not-a-control?window=24h"
     );
     assert.equal(operationsControlInvalid.status, 400);
     assert.equal(operationsControlInvalid.body.error, "INVALID_CONTROL");
+
+    const aideLive = await agent.get("/api/v1/dashboard/operations/control/aide/live");
+    assert.equal(aideLive.status, 200);
+    assert.equal(typeof aideLive.body.ok, "boolean");
+    assert.equal(typeof aideLive.body.liveAide, "object");
+
+    const aideCommands = await agent.get("/api/v1/dashboard/operations/commands?control=aide");
+    assert.equal(aideCommands.status, 200);
+    assert.equal(Array.isArray(aideCommands.body.commands), true);
+
+    const invalidCommands = await agent.get("/api/v1/dashboard/operations/commands?control=bogus");
+    assert.equal(invalidCommands.status, 400);
+    assert.equal(invalidCommands.body.error, "INVALID_CONTROL");
+
+    const commandRunDisabled = await agent.post("/api/v1/dashboard/operations/commands/run").send({
+      control: "aide",
+      commandKey: "aide_check",
+      confirm: true,
+    });
+    assert.equal(commandRunDisabled.status, 403);
+    assert.equal(commandRunDisabled.body.error, "COMMAND_RUNNER_DISABLED");
 
     const opsEvents = await agent.get(
       "/api/v1/dashboard/ops-events?source=postfix&status=open&severity=warning&limit=10&offset=0"
@@ -274,6 +302,7 @@ test("otp-first public login enforces otp then credentials and exposes diagnosti
     repository: core.repository,
     dashboardService: core.dashboardService,
     opsInsightService: core.opsInsightService,
+    opsCommandService: core.opsCommandService,
     programCheckerService: core.programCheckerService,
     mailCheckerService: core.mailCheckerService,
     activityCheckerService: core.activityCheckerService,

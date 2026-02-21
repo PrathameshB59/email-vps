@@ -159,6 +159,7 @@ Dashboard page routes:
 - `/dashboard/operations/relay`
 - `/dashboard/operations/postfix`
 - `/dashboard/operations/crontab`
+- `/dashboard/operations/rclone`
 - `/dashboard/mail`
 
 Operations APIs:
@@ -243,6 +244,7 @@ This removes stale user/root cron entries, sets `MAILTO=""`, and keeps observabi
   - verify:
     - `curl -i https://mail.stackpilot.in/dashboard/operations`
     - `curl -i https://mail.stackpilot.in/dashboard/operations/postfix`
+    - `curl -i https://mail.stackpilot.in/dashboard/operations/rclone`
 - deep page stuck on `Loading ...`:
   - cause: browser cached older page bootstrap module.
   - fix:
@@ -297,10 +299,37 @@ curl -i -b /tmp/email-vps.cookie "https://mail.stackpilot.in/api/v1/dashboard/pr
 Verify:
 
 - AIDE, Fail2Ban, relay, postfix, cron, and logwatch controls are populated
+- rclone runtime (binary/remote/scripts/cron/artifacts) is populated in operations controls
 - event timeline reflects source/severity/status filters correctly
 - freshness/collector lag is visible in operations snapshot
 
-## 12. Lighthouse Clean-Profile Release Gate
+## 12. Rclone Control Diagnostics (Monitor-Only)
+
+Rclone control page and API are read-only diagnostics. No sync/copy operation is triggered from the dashboard.
+
+Checks include:
+
+- rclone binary/version availability
+- remote presence/connectivity (`DASHBOARD_RCLONE_REMOTE`, default `gdrive`)
+- backup script and autosync script path existence
+- cron references for nightly + autosync workflows
+- stale or broken cron path references
+- backup artifact recency in `DASHBOARD_RCLONE_BACKUP_DIR`
+- backup/sync log warning and error signatures
+
+Quick validation commands:
+
+```bash
+rclone version
+rclone listremotes
+rclone lsd gdrive:
+ls -lah /home/devuser/backups | tail -n 20
+tail -n 80 /home/devuser/backups/backup.log
+tail -n 80 /home/devuser/backups/sync.log
+curl -i -b /tmp/email-vps.cookie "https://mail.stackpilot.in/api/v1/dashboard/operations/control/rclone?window=24h"
+```
+
+## 13. Lighthouse Clean-Profile Release Gate
 
 Run Lighthouse in a clean browser profile (extensions disabled) to avoid false regressions:
 
@@ -319,7 +348,7 @@ Baseline capture for this phase (February 19, 2026):
 - `/dashboard/activity`: Performance `79`, Accessibility `100`, Best Practices `81`, SEO `90`
 - remaining optimization targets: CLS on masthead/nav and page-module JS weight
 
-## 13. Rollback
+## 14. Rollback
 
 1. Stop service:
 

@@ -11,6 +11,8 @@ const {
   extractLogWarnings,
   makeOpsEvent,
   summarizeLogWarnings,
+  parseRcloneLogDiagnostics,
+  detectRcloneProfileMode,
 } = __private;
 
 test("postfix parser detects duplicate keys and warning severities", () => {
@@ -86,6 +88,63 @@ test("ops fingerprint generation is stable for repeated signatures", () => {
 
   assert.equal(first.fingerprint, second.fingerprint);
   assert.notEqual(first.fingerprint, changed.fingerprint);
+});
+
+test("rclone log diagnostics classify error, warning, and success lines", () => {
+  const diagnostics = parseRcloneLogDiagnostics(`
+2026/02/19 11:12:01 INFO  : There was nothing to transfer
+2026/02/19 11:12:03 NOTICE: copied (new) file
+2026/02/19 11:12:08 ERROR : Failed to copy: directory not found
+2026/02/19 11:12:12 WARNING: retrying after temporary issue
+`);
+
+  assert.equal(diagnostics.lineCount, 4);
+  assert.equal(diagnostics.errorCount, 1);
+  assert.equal(diagnostics.warningCount, 1);
+  assert.match(String(diagnostics.lastErrorLine || ""), /directory not found/i);
+  assert.match(String(diagnostics.lastSuccessLine || ""), /nothing to transfer|copied/i);
+});
+
+test("rclone profile detection supports hybrid/nightly/autosync/none", () => {
+  assert.equal(
+    detectRcloneProfileMode({
+      hasNightly: true,
+      hasAutosync: true,
+      cronNightly: true,
+      cronAutosync: true,
+    }),
+    "hybrid"
+  );
+
+  assert.equal(
+    detectRcloneProfileMode({
+      hasNightly: true,
+      hasAutosync: false,
+      cronNightly: false,
+      cronAutosync: false,
+    }),
+    "nightly"
+  );
+
+  assert.equal(
+    detectRcloneProfileMode({
+      hasNightly: false,
+      hasAutosync: false,
+      cronNightly: false,
+      cronAutosync: true,
+    }),
+    "autosync"
+  );
+
+  assert.equal(
+    detectRcloneProfileMode({
+      hasNightly: false,
+      hasAutosync: false,
+      cronNightly: false,
+      cronAutosync: false,
+    }),
+    "none"
+  );
 });
 
 test("ops events transition open to resolved and reopen on repeat detection", async () => {

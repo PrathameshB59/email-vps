@@ -40,6 +40,11 @@ function parseIntParam(value, fallback) {
   return Math.trunc(parsed);
 }
 
+function writeSseEvent(res, event, payload) {
+  res.write(`event: ${event}\n`);
+  res.write(`data: ${JSON.stringify(payload)}\n\n`);
+}
+
 function isLoopbackIp(ip) {
   const value = String(ip || "").trim();
   return value === "127.0.0.1" || value === "::1";
@@ -50,6 +55,7 @@ function createDashboardRouter({
   repository,
   dashboardService,
   opsInsightService,
+  opsCommandService,
   programCheckerService,
   mailCheckerService,
   activityCheckerService,
@@ -393,6 +399,7 @@ function createDashboardRouter({
     ["/dashboard/operations/relay", "dashboard-operations-relay.html"],
     ["/dashboard/operations/postfix", "dashboard-operations-postfix.html"],
     ["/dashboard/operations/crontab", "dashboard-operations-crontab.html"],
+    ["/dashboard/operations/rclone", "dashboard-operations-rclone.html"],
   ];
 
   for (const [routePath, fileName] of dashboardPages) {
@@ -481,6 +488,126 @@ function createDashboardRouter({
           return res.status(200).json(operations);
         }
 
+        if (req.method === "GET" && req.path === "/operations/control/aide/live") {
+          const aideLive = await opsInsightService.getAideLiveState();
+          return res.status(200).json(aideLive);
+        }
+
+        if (req.method === "GET" && req.path === "/operations/commands") {
+          const control = req.query.control ? String(req.query.control) : "aide";
+          try {
+            const commands = await opsCommandService.getCommands({ control });
+            return res.status(200).json(commands);
+          } catch (error) {
+            if (error?.code) {
+              return res.status(error.statusCode || 400).json({
+                error: error.code,
+                message: error.message,
+              });
+            }
+            throw error;
+          }
+        }
+
+        if (req.method === "POST" && req.path === "/operations/commands/run") {
+          const requestedByIp = req.dashboardClientIp || req.ip || req.socket?.remoteAddress || null;
+          const requestedByUser = req.dashboardSession?.sub || env.DASHBOARD_LOGIN_USER || "dashboard";
+          try {
+            const response = await opsCommandService.runCommand({
+              control: req.body?.control,
+              commandKey: req.body?.commandKey,
+              confirm: req.body?.confirm === true,
+              requestedByIp,
+              requestedByUser,
+            });
+            return res.status(202).json(response);
+          } catch (error) {
+            if (Number.isFinite(Number(error?.retryAfterSeconds)) && Number(error.retryAfterSeconds) > 0) {
+              res.set("Retry-After", String(Math.trunc(Number(error.retryAfterSeconds))));
+            }
+            if (error?.code) {
+              return res.status(error.statusCode || 400).json({
+                error: error.code,
+                message: error.message,
+                runId: error.runId || null,
+                retryAfterSeconds:
+                  Number.isFinite(Number(error.retryAfterSeconds)) && Number(error.retryAfterSeconds) > 0
+                    ? Math.trunc(Number(error.retryAfterSeconds))
+                    : null,
+              });
+            }
+            throw error;
+          }
+        }
+
+        const runStatusMatch = req.path.match(/^\/operations\/commands\/run\/([^/]+)$/);
+        if (req.method === "GET" && runStatusMatch) {
+          const runId = decodeURIComponent(String(runStatusMatch[1] || ""));
+          try {
+            const run = await opsCommandService.getRun(runId, {
+              outputLimit: Math.min(Math.max(parseIntParam(req.query.outputLimit, 400), 50), 1000),
+            });
+            return res.status(200).json(run);
+          } catch (error) {
+            if (error?.code) {
+              return res.status(error.statusCode || 400).json({
+                error: error.code,
+                message: error.message,
+              });
+            }
+            throw error;
+          }
+        }
+
+        const runStreamMatch = req.path.match(/^\/operations\/commands\/run\/([^/]+)\/stream$/);
+        if (req.method === "GET" && runStreamMatch) {
+          const runId = decodeURIComponent(String(runStreamMatch[1] || ""));
+          let initial;
+          try {
+            initial = await opsCommandService.getRun(runId, {
+              outputLimit: Math.min(Math.max(parseIntParam(req.query.outputLimit, 500), 50), 1200),
+            });
+          } catch (error) {
+            if (error?.code) {
+              return res.status(error.statusCode || 404).json({
+                error: error.code,
+                message: error.message,
+              });
+            }
+            throw error;
+          }
+
+          res.status(200);
+          res.setHeader("Content-Type", "text/event-stream; charset=utf-8");
+          res.setHeader("Cache-Control", "no-cache, no-transform");
+          res.setHeader("Connection", "keep-alive");
+          res.setHeader("X-Accel-Buffering", "no");
+          res.flushHeaders?.();
+
+          writeSseEvent(res, "snapshot", initial);
+
+          const unsubscribe = opsCommandService.subscribeRun(runId, (eventPayload) => {
+            const eventType = String(eventPayload?.type || "status");
+            writeSseEvent(res, eventType, eventPayload);
+          });
+
+          const heartbeat = setInterval(() => {
+            res.write(": ping\n\n");
+          }, 15000);
+
+          const closeStream = () => {
+            clearInterval(heartbeat);
+            unsubscribe();
+            if (!res.writableEnded) {
+              res.end();
+            }
+          };
+
+          req.on("close", closeStream);
+          req.on("error", closeStream);
+          return;
+        }
+
         if (req.method === "GET" && req.path.startsWith("/operations/control/")) {
           const control = String(req.path.replace(/^\/operations\/control\//, "") || "")
             .split("/")
@@ -507,6 +634,32 @@ function createDashboardRouter({
             }
             throw error;
           }
+        }
+
+        if (req.method === "POST" && req.path === "/operations/control/rclone/trigger-sync") {
+          const trigger = await opsInsightService.triggerRcloneSync({
+            requestedByIp: req.dashboardClientIp || req.ip || req.socket?.remoteAddress || null,
+            dashboardUser: req.dashboardSession?.sub || env.DASHBOARD_LOGIN_USER,
+          });
+
+          if (trigger.ok) {
+            return res.status(202).json(trigger);
+          }
+
+          if (Number.isFinite(Number(trigger.retryAfterSeconds)) && Number(trigger.retryAfterSeconds) > 0) {
+            res.set("Retry-After", String(Math.trunc(Number(trigger.retryAfterSeconds))));
+          }
+
+          if (trigger.code === "RCLONE_TRIGGER_DISABLED") {
+            return res.status(403).json(trigger);
+          }
+          if (trigger.code === "RCLONE_TRIGGER_COOLDOWN_ACTIVE" || trigger.code === "RCLONE_TRIGGER_IN_PROGRESS") {
+            return res.status(429).json(trigger);
+          }
+          if (trigger.code === "RCLONE_TRIGGER_SCRIPT_MISSING") {
+            return res.status(400).json(trigger);
+          }
+          return res.status(500).json(trigger);
         }
 
         if (req.method === "GET" && req.path === "/ops-events") {

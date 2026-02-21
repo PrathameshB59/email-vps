@@ -12,6 +12,8 @@ const { createProgramCheckerService } = require("./dashboard/services/programChe
 const { createMailCheckerService } = require("./dashboard/services/mailCheckerService");
 const { createActivityCheckerService } = require("./dashboard/services/activityCheckerService");
 const { createOpsInsightService } = require("./dashboard/services/opsInsightService");
+const { createOpsCommandService } = require("./dashboard/services/opsCommandService");
+const { createOpsDaemonClient } = require("./dashboard/services/opsDaemonClient");
 const { createOtpAuthService } = require("./dashboard/services/otpAuthService");
 const { createHealthCheckService } = require("./dashboard/services/healthCheckService");
 const { createOpsInsightWorker } = require("./dashboard/opsInsightWorker");
@@ -92,6 +94,18 @@ async function createCore({ envOverrides = {}, transport = null, logger = consol
     repository,
   });
 
+  const opsDaemonClient = createOpsDaemonClient({
+    env,
+    logger,
+  });
+
+  const opsCommandService = createOpsCommandService({
+    env,
+    repository,
+    opsDaemonClient,
+    logger,
+  });
+
   const dashboardSnapshotWorker = createDashboardSnapshotWorker({
     dashboardService,
     pollMs: env.DASHBOARD_METRIC_SNAPSHOT_MINUTES * 60 * 1000,
@@ -127,6 +141,8 @@ async function createCore({ envOverrides = {}, transport = null, logger = consol
     activityCheckerService,
     otpAuthService,
     healthCheckService,
+    opsDaemonClient,
+    opsCommandService,
     dashboardSnapshotWorker,
     opsInsightWorker,
     close,
@@ -147,6 +163,7 @@ async function createRuntime(options = {}) {
     activityCheckerService: core.activityCheckerService,
     otpAuthService: core.otpAuthService,
     healthCheckService: core.healthCheckService,
+    opsCommandService: core.opsCommandService,
   });
 
   return {

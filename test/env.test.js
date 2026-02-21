@@ -29,4 +29,23 @@ test("parseEnv applies defaults and coercion", () => {
   assert.equal(parsed.DASHBOARD_LOCAL_FALLBACK_ENABLED, true);
   assert.equal(parsed.DASHBOARD_OTP_PRIMARY_ENABLED, true);
   assert.equal(parsed.DASHBOARD_OTP_DIAGNOSTICS_ENABLED, true);
+  assert.equal(parsed.DASHBOARD_OPS_DAEMON_ENABLED, false);
+  assert.equal(parsed.DASHBOARD_OPS_DAEMON_REQUEST_TTL_SECONDS, 30);
+});
+
+test("parseEnv requires daemon hmac secret when daemon mode is enabled", () => {
+  assert.throws(
+    () =>
+      parseEnv({
+        MAIL_API_TOKEN: "token-123",
+        MAIL_FROM: "Email VPS <noreply@example.com>",
+        DASHBOARD_LOGIN_USER: "owner",
+        DASHBOARD_LOGIN_PASS: "password-123",
+        DASHBOARD_SESSION_SECRET: "dashboard-secret-value",
+        DASHBOARD_OTP_TO: "owner@example.com",
+        DASHBOARD_OPS_DAEMON_ENABLED: "true",
+        DASHBOARD_OPS_DAEMON_HMAC_SECRET: "short",
+      }),
+    /DASHBOARD_OPS_DAEMON_HMAC_SECRET/
+  );
 });

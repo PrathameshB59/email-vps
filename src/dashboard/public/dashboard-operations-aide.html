@@ -57,6 +57,7 @@
       <a class="ops-subnav-chip" data-ops-target="relay" href="/dashboard/operations/relay">Relay</a>
       <a class="ops-subnav-chip" data-ops-target="postfix" href="/dashboard/operations/postfix">Postfix</a>
       <a class="ops-subnav-chip" data-ops-target="crontab" href="/dashboard/operations/crontab">Crontab</a>
+      <a class="ops-subnav-chip" data-ops-target="rclone" href="/dashboard/operations/rclone">Rclone</a>
     </nav>
 
     <section class="ops-filter-row">
@@ -78,9 +79,12 @@
     </section>
 
     <section id="controlSummary" class="page-grid page-grid-4"></section>
+    <section id="controlLive" class="page-grid page-grid-1"></section>
     <section id="controlStatus" class="page-grid page-grid-1"></section>
+    <section id="controlConsole" class="page-grid page-grid-1"></section>
     <section id="controlTimeline" class="page-grid page-grid-1"></section>
     <section id="controlHints" class="page-grid page-grid-1"></section>
+    <div id="opsToastMount" class="toast-mount" aria-live="polite" aria-atomic="true"></div>
   </main>
 
   <script defer src="/dashboard/assets/dashboard-nav.js"></script>

@@ -11,6 +11,7 @@ Single-process Email-VPS service with:
   - optional IP allowlist toggle.
 - SQLite-backed queue/events/quota plus dashboard metric snapshots (90-day retention).
 - Balanced NOC overview plus dedicated deep-dive pages for activity, security, health, performance, stability, programs, and mail checks.
+- Operations control subnav for AIDE, Fail2Ban, relay, postfix, crontab/logwatch, and rclone backup monitoring.
 
 ## Install
 
@@ -37,6 +38,18 @@ Optional hardening values:
 - `DASHBOARD_IP_ALLOWLIST_ENABLED=true`
 - `DASHBOARD_ALLOWED_IPS=<comma-separated-operator-ips>`
 - `DASHBOARD_LOCAL_FALLBACK_ENABLED=false` (disable localhost break-glass)
+
+Optional rclone monitor values:
+
+- `DASHBOARD_RCLONE_REMOTE` (default `gdrive`)
+- `DASHBOARD_RCLONE_TARGET` (default `gdrive:vps/devuser`)
+- `DASHBOARD_RCLONE_BACKUP_DIR` (default `/home/devuser/backups`)
+- `DASHBOARD_RCLONE_BACKUP_SCRIPT` (default `/home/devuser/backup-nightly.sh`)
+- `DASHBOARD_RCLONE_AUTOSYNC_SCRIPT` (default `/home/devuser/auto-sync.sh`)
+- `DASHBOARD_RCLONE_BACKUP_LOG` (default `/home/devuser/backups/backup.log`)
+- `DASHBOARD_RCLONE_SYNC_LOG` (default `/home/devuser/backups/sync.log`)
+- `DASHBOARD_RCLONE_CONFIG_PATH` (default `/home/devuser/.config/rclone/rclone.conf`)
+- `DASHBOARD_RCLONE_STALE_HOURS` (default `24`)
 
 Production bind:
 
@@ -72,6 +85,7 @@ Auth and pages:
 - `GET /dashboard/operations/relay`
 - `GET /dashboard/operations/postfix`
 - `GET /dashboard/operations/crontab`
+- `GET /dashboard/operations/rclone`
 - `GET /dashboard/mail`
 
 Protected dashboard data APIs:
@@ -231,7 +245,7 @@ curl -i -b /tmp/email-vps.cookie "https://mail.stackpilot.in/api/v1/dashboard/pr
 
 Expected:
 
-- controls include AIDE/Fail2Ban/relay/postfix/cron/logwatch signals
+- controls include AIDE/Fail2Ban/relay/postfix/cron/logwatch/rclone signals
 - timeline contains open/resolved event lifecycle with fingerprints
 - stale `/opt/stackpilot-monitor` references report in cron diagnostics when present
 
@@ -251,7 +265,9 @@ pm2 save
 ```bash
 curl -i https://mail.stackpilot.in/dashboard/operations
 curl -i https://mail.stackpilot.in/dashboard/operations/postfix
+curl -i https://mail.stackpilot.in/dashboard/operations/rclone
 curl -i -b /tmp/email-vps.cookie "https://mail.stackpilot.in/api/v1/dashboard/operations/control/postfix?window=24h"
+curl -i -b /tmp/email-vps.cookie "https://mail.stackpilot.in/api/v1/dashboard/operations/control/rclone?window=24h"
 ```
 
 3. expected:
@@ -259,6 +275,21 @@ curl -i -b /tmp/email-vps.cookie "https://mail.stackpilot.in/api/v1/dashboard/op
 - control API returns `200` JSON
 
 If deep pages stay on `Loading ...`, hard-refresh once after deploy so updated page module bootstrap is loaded.
+
+## Rclone Control Diagnostics (Monitor-Only)
+
+Rclone control is a read-only diagnostics view. It does not run sync/copy actions from the UI.
+
+Quick checks:
+
+```bash
+rclone version
+rclone listremotes
+rclone lsd gdrive:
+ls -lah /home/devuser/backups | tail -n 20
+tail -n 80 /home/devuser/backups/backup.log
+tail -n 80 /home/devuser/backups/sync.log
+```
 
 ## Lighthouse Clean-Profile Audit Procedure
 

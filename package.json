@@ -7,6 +7,7 @@
   "scripts": {
     "start": "node src/server.js",
     "start:mail": "node src/server.js",
+    "start:ops-daemon": "node src/cli/ops-daemon.js",
     "dev": "node --watch src/server.js",
     "test": "node --test test",
     "mail:test": "node src/cli/mail-test.js",
